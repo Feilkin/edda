@@ -1,0 +1,4 @@
+// Sample edda script
+
+let hello = -> { print "hello" }
+hello();
