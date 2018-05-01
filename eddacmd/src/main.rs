@@ -8,7 +8,9 @@ fn main() {
 	let script = r#"
 print 1 + (3 * 4)*(3 * 4); // quick maths
 print "testi";
-print "multi\nline";
+
+let hello = "world";
+print hello;
 "#;
 
 	println!("Script: `{}`", script);

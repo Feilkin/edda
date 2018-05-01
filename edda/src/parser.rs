@@ -19,10 +19,39 @@ impl Parser {
     pub fn parse(&mut self) -> Vec<Statement> {
     	let mut statements = Vec::new();
     	while !self.is_at_end() {
-    		statements.push(self.statement());
+    		statements.push(self.declaration());
     	}
 
     	statements
+    }
+
+    fn declaration(&mut self) -> Statement {
+    	if self.check(Token::Let) {
+    		self.advance();
+    		return self.var_declaration();
+    	}
+
+    	self.statement()
+    }
+
+    fn var_declaration(&mut self) -> Statement {
+    	assert!(self.check(Token::Identifier("".to_owned())));
+    	let name = match self.advance() {
+    		Token::Identifier(ref id) => id.to_owned(),
+    		_ => panic!("wtf is happening")
+    	};
+
+    	let mut initializer = None;
+
+    	if self.check(Token::Equal) {
+    		self.advance();
+
+    		initializer = Some(Box::new(self.expression()));
+    	}
+
+    	assert_eq!(self.advance(), Token::Semicolon);
+
+    	Statement::VarDeclaration(name.clone(), initializer)
     }
 
     fn statement(&mut self) -> Statement {
@@ -146,6 +175,7 @@ impl Parser {
 
                 Expression::Grouping(Box::new(expr))
             }
+            Token::Identifier(ref name) => Expression::Variable(name.clone()),
             _ => panic!("Failed to parse, unexpected {:?}", token),
         }
     }

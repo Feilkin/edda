@@ -37,6 +37,7 @@ pub enum Expression {
         right: Box<Expression>,
     },
     Grouping(Box<Expression>),
+    Variable(String),
 }
 
 impl fmt::Display for Expression {
@@ -53,6 +54,7 @@ impl fmt::Display for Expression {
                 ref right,
             } => write!(f, "({} {}, {})", operator, left, right),
             &Expression::Grouping(ref expr) => write!(f, "{}", expr),
+            &Expression::Variable(ref id) => write!(f, "{}", id),
         }
     }
 }
@@ -61,13 +63,5 @@ impl fmt::Display for Expression {
 pub enum Statement {
 	Expression(Box<Expression>),
 	Print(Box<Expression>),
-}
-
-impl fmt::Display for Statement {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			&Statement::Expression(ref expr) => write!(f, "{};", expr),
-			&Statement::Print(ref expr) => write!(f, "print {}", expr),
-		}
-	}
+	VarDeclaration(String, Option<Box<Expression>>),
 }

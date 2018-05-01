@@ -6,4 +6,5 @@ pub mod ast;
 pub mod value;
 pub mod scanner;
 pub mod parser;
+pub mod environment;
 pub mod interpreter;
