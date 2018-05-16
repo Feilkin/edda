@@ -39,6 +39,7 @@ False         = "false"
 Nil           = "nil"
 
 # syntax
+
 script          = declaration* exportStatement? EoF ;
 declaration     = varDeclaration
                 | statement ;
@@ -61,5 +62,7 @@ primary         = Number
                 | False
                 | Nil
                 | LeftParen expression RightParen
-                | Identifier ;
-
+                | Identifier
+                | funcExpression ;
+funcExpression  = paramList? Arrow blockExpression ;
+blockExpression = LeftBrace declaration * expression? RightBrace ;

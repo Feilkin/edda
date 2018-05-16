@@ -1,14 +1,14 @@
 extern crate edda;
 
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 
 use edda::scanner::Scanner;
 use edda::parser::Parser;
 use edda::interpreter::Interpreter;
 
 fn main() {
-    let mut EoF = false;
     let stdin = io::stdin();
+    let mut stdout = io::stdout();
     let mut interpreter = Interpreter::new();
 
     for line in stdin.lock().lines() {
