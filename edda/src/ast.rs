@@ -37,10 +37,12 @@ pub enum Expression {
         right: Box<Expression>,
     },
     Grouping(Box<Expression>),
+    Variable(String),
 }
 
 #[derive(Debug)]
 pub enum Statement {
 	Expression(Box<Expression>),
 	Print(Box<Expression>),
+	VarDeclaration(String, Option<Box<Expression>>),
 }

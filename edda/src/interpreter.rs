@@ -3,15 +3,26 @@
 use ast::{Statement, Expression, Literal};
 use value::Value;
 use token::Token;
+use environment::Environment;
 
 #[derive(Debug)]
 pub struct RuntimeError(&'static str);
 
-pub struct Interpreter {}
+impl RuntimeError {
+	pub fn new(reason: &'static str) -> RuntimeError {
+		RuntimeError(reason)
+	}
+}
+
+pub struct Interpreter {
+	environment: Environment,
+}
 
 impl Interpreter {
 	pub fn new() -> Interpreter {
-		Interpreter {}
+		Interpreter {
+			environment: Environment::new()
+		}
 	}
 
 	fn execute(&mut self, stmt: &Statement) -> Result<(), RuntimeError> {
@@ -20,6 +31,15 @@ impl Interpreter {
 				self.evaluate(expr).and_then(|val| { println!("{}", val); Ok(()) })
 			},
 			&Statement::Expression(ref expr) => { self.evaluate(expr).and(Ok(())) }
+			&Statement::VarDeclaration(ref id, ref initializer) => {
+				let mut value = Value::Nil;
+				if let Some(expr) = initializer.as_ref() {
+					value = self.evaluate(expr).unwrap();
+				}
+
+				self.environment.define(id, value);
+				Ok(())
+			}
 		}
 	}
 
@@ -32,6 +52,9 @@ impl Interpreter {
 					&Literal::Boolean(b) => if b { Ok(Value::True) } else { Ok(Value::False) },
 					&Literal::Nil => Ok(Value::Nil),
 				}
+			},
+			&Expression::Variable(ref id) => {
+				self.environment.get(id)
 			},
 			&Expression::Unary{ ref operator, ref expr } => {
 				let value = self.evaluate(expr).unwrap();

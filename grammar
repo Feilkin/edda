@@ -39,12 +39,16 @@ False         = "false"
 Nil           = "nil"
 
 # syntax
-script          = statement* exportStatement? EoF ;
+
+script          = declaration* exportStatement? EoF ;
+declaration     = varDeclaration
+                | statement ;
+varDeclaration  = Let Identifier (Equal expression)? Semicolon ;
 statement       = exprStatement
                 | printStatement ;
 exprStatement   = expression Semicolon ;
 printStatement  = Print expression Semicolon ;
-exportStatement = Export expression (, expression)* Semicolon ;
+exportStatement = Export expression (Comma expression)* Semicolon ;
 expression      = equality ;
 equality        = comparison ( ( BangEquality | EqualityEquality ) comparison )* ;
 comparsion      = addition ( ( Less | LessEqual | Greater | GreaterEqual ) addition )* ;
@@ -52,5 +56,13 @@ addition        = multiplication ( ( Minus | Plus ) multiplication )* ;
 multiplication  = unary ( ( Slash | Star ) unary )* ;
 unary           = ( Bang | Minus ) unary
                 | primary ;
-primary         = Number | String | True | False | Nil | LeftParen expression RightParen ;
-
+primary         = Number
+                | String
+                | True
+                | False
+                | Nil
+                | LeftParen expression RightParen
+                | Identifier
+                | funcExpression ;
+funcExpression  = paramList? Arrow blockExpression ;
+blockExpression = LeftBrace declaration * expression? RightBrace ;
