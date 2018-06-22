@@ -1,178 +1,204 @@
 //! Parser
 //! parses and stuff
 
-use std::mem;
+use std::slice::Iter;
+use std::iter::Peekable;
 
-use token::Token;
-use ast::{Statement, Expression, Literal};
+use token::{Token, TokenType};
+use ast::{Expression, Literal, Statement};
 
-pub struct Parser {
-    tokens: Vec<Token>,
-    current: usize,
+#[derive(Debug)]
+pub struct ParseError<'a> {
+    pub token: &'a Token,
+    pub message: String,
 }
 
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser { tokens, current: 0 }
-    }
+pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, ParseError> {
+    // early exit on empty token list (only contains EoF)
+    if tokens.len() == 1 {}
 
-    pub fn parse(&mut self) -> Vec<Statement> {
-    	let mut statements = Vec::new();
-    	while !self.is_at_end() {
-    		statements.push(self.statement());
-    	}
+    let mut statements = Vec::new();
+    let mut token_iter = tokens.iter().peekable();
 
-    	statements
-    }
+    loop {
+        statements.push(statement(&mut token_iter)?);
 
-    fn statement(&mut self) -> Statement {
-    	if self.check(Token::Print) {
-    		self.advance();
-    		return self.print_statement();
-    	}
-
-    	self.expression_statement()
-    }
-
-    fn print_statement(&mut self) -> Statement {
-    	let expr = self.expression();
-    	assert_eq!(self.advance(), Token::Semicolon);
-
-    	Statement::Print(Box::new(expr))
-    }
-
-    fn expression_statement(&mut self) -> Statement {
-    	let expr = self.expression();
-    	assert_eq!(self.advance(), Token::Semicolon);
-
-    	Statement::Expression(Box::new(expr))
-    }
-
-    fn expression(&mut self) -> Expression {
-        self.equality()
-    }
-
-    fn equality(&mut self) -> Expression {
-        let mut left = self.comparison();
-
-        while self.check(Token::BangEqual) || self.check(Token::EqualEqual) {
-            let operator = self.advance();
-            let right = self.comparison();
-            left = Expression::Binary {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
+        match token_iter.peek().unwrap().ttype {
+            TokenType::EoF => break,
+            _ => {}
         }
-
-        left
     }
 
-    fn comparison(&mut self) -> Expression {
-        let mut left = self.addition();
+    Ok(statements)
+}
 
-        while self.check(Token::Greater) || self.check(Token::GreaterEqual)
-            || self.check(Token::Less) || self.check(Token::LessEqual)
-        {
-            let operator = self.advance();
-            let right = self.addition();
-            left = Expression::Binary {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
+fn statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
+    match tokens.peek().unwrap().ttype {
+        TokenType::Print => {
+            tokens.next();
+            print_statement(tokens)
         }
+        _ => expression_statement(tokens),
+    }
+}
 
-        left
+fn print_statement<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Statement, ParseError<'a>> {
+    let expr = expression(tokens)?;
+
+    let next = tokens.next().unwrap();
+    match next.ttype {
+        TokenType::Semicolon => Ok(Statement::Print(Box::new(expr))),
+        _ => Err(ParseError {
+            token: next,
+            message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
+        }),
+    }
+}
+
+fn expression_statement<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Statement, ParseError<'a>> {
+    let expr = expression(tokens)?;
+
+    let next = tokens.next().unwrap();
+    match next.ttype {
+        TokenType::Semicolon => Ok(Statement::Print(Box::new(expr))),
+        _ => Err(ParseError {
+            token: next,
+            message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
+        }),
+    }
+}
+
+fn expression<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    equality(tokens)
+}
+
+fn equality<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    let mut left = comparison(tokens)?;
+
+    while match tokens.peek().unwrap().ttype {
+        TokenType::BangEqual | TokenType::EqualEqual => true,
+        _ => false,
+    } {
+        let operator = tokens.next().unwrap().clone();
+        let right = comparison(tokens)?;
+        left = Expression::Binary {
+            operator,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
     }
 
-    fn addition(&mut self) -> Expression {
-        let mut left = self.multiplication();
+    Ok(left)
+}
 
-        while self.check(Token::Plus) || self.check(Token::Minus) {
-            let operator = self.advance();
-            let right = self.multiplication();
-            left = Expression::Binary {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
+fn comparison<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    let mut left = addition(tokens)?;
+
+    while match tokens.peek().unwrap().ttype {
+        TokenType::Greater | TokenType::GreaterEqual | TokenType::Less | TokenType::LessEqual => {
+            true
         }
-
-        left
+        _ => false,
+    } {
+        let operator = tokens.next().unwrap().clone();
+        let right = addition(tokens)?;
+        left = Expression::Binary {
+            operator,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
     }
 
-    fn multiplication(&mut self) -> Expression {
-        let mut left = self.unary();
+    Ok(left)
+}
 
-        while self.check(Token::Slash) || self.check(Token::Star) {
-            let operator = self.advance();
-            let right = self.unary();
-            left = Expression::Binary {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
-        }
+fn addition<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    let mut left = multiplication(tokens)?;
 
-        left
+    while match tokens.peek().unwrap().ttype {
+        TokenType::Plus | TokenType::Minus => true,
+        _ => false,
+    } {
+        let operator = tokens.next().unwrap().clone();
+        let right = multiplication(tokens)?;
+        left = Expression::Binary {
+            operator,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
     }
 
-    fn unary(&mut self) -> Expression {
-        if self.check(Token::Bang) || self.check(Token::Minus) {
-            let operator = self.advance();
-            let expr = self.unary();
-            return Expression::Unary {
+    Ok(left)
+}
+
+fn multiplication<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Expression, ParseError<'a>> {
+    let mut left = unary(tokens)?;
+
+    while match tokens.peek().unwrap().ttype {
+        TokenType::Slash | TokenType::Star => true,
+        _ => false,
+    } {
+        let operator = tokens.next().unwrap().clone();
+        let right = unary(tokens)?;
+        left = Expression::Binary {
+            operator,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+    }
+
+    Ok(left)
+}
+
+fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    match tokens.peek().unwrap().ttype {
+        TokenType::Minus | TokenType::Bang => {
+            let operator = tokens.next().unwrap().clone();
+            let expr = unary(tokens)?;
+            return Ok(Expression::Unary {
                 operator,
                 expr: Box::new(expr),
-            };
+            });
         }
-
-        self.primary()
+        _ => {}
     }
 
-    fn primary(&mut self) -> Expression {
-        let token = self.advance();
+    primary(tokens)
+}
 
-        match token {
-            Token::Number(val) => Expression::Literal(Literal::Number(val)),
-            Token::String(ref val) => Expression::Literal(Literal::String(val.clone())),
-            Token::False => Expression::Literal(Literal::Boolean(false)),
-            Token::True => Expression::Literal(Literal::Boolean(true)),
-            Token::Nil => Expression::Literal(Literal::Nil),
-            Token::LeftParen => {
-                let expr = self.expression();
-                assert_eq!(self.advance(), Token::RightParen);
+fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    let token = tokens.next().unwrap();
 
-                Expression::Grouping(Box::new(expr))
+    match token.ttype {
+        TokenType::Number(val) => Ok(Expression::Literal(Literal::Number(val))),
+        TokenType::String(ref val) => Ok(Expression::Literal(Literal::String(val.clone()))),
+        TokenType::False => Ok(Expression::Literal(Literal::Boolean(false))),
+        TokenType::True => Ok(Expression::Literal(Literal::Boolean(true))),
+        TokenType::Nil => Ok(Expression::Literal(Literal::Nil)),
+        TokenType::LeftParen => {
+            let expr = expression(tokens)?;
+
+            let next = tokens.next().unwrap();
+            match next.ttype {
+                TokenType::RightParen => Ok(Expression::Grouping(Box::new(expr))),
+                _ => Err(ParseError {
+                    token: next,
+                    message: format!(
+                        "Unexpected {:?}, expected closing parenthesis ')'.",
+                        next.ttype
+                    ),
+                }),
             }
-            _ => panic!("Failed to parse, unexpected {:?}", token),
         }
-    }
-
-    fn check(&self, token: Token) -> bool {
-        if self.is_at_end() {
-            return false;
-        }
-        mem::discriminant(&self.peek()) == mem::discriminant(&token)
-    }
-
-    fn advance(&mut self) -> Token {
-        if !self.is_at_end() {
-            self.current += 1
-        }
-        self.previous()
-    }
-
-    fn is_at_end(&self) -> bool {
-        self.peek() == Token::EoF
-    }
-
-    fn peek(&self) -> Token {
-        self.tokens.get(self.current).unwrap().clone()
-    }
-
-    fn previous(&self) -> Token {
-        self.tokens.get(self.current - 1).unwrap().clone()
+        _ => Err(ParseError {
+            token: token,
+            message: format!("Unexpected {:?}.", token.ttype)
+        }),
     }
 }

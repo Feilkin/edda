@@ -5,3 +5,4 @@ authors = ["Aatu Hieta <aatu@hieta.fi>"]
 
 [dependencies]
 lazy_static = "*"
+colored = "1.6"

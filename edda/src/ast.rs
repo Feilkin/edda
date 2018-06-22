@@ -39,35 +39,8 @@ pub enum Expression {
     Grouping(Box<Expression>),
 }
 
-impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Expression::Literal(ref literal) => write!(f, "{}", literal),
-            &Expression::Unary {
-                ref operator,
-                ref expr,
-            } => write!(f, "({} {})", operator, expr),
-            &Expression::Binary {
-                ref operator,
-                ref left,
-                ref right,
-            } => write!(f, "({} {}, {})", operator, left, right),
-            &Expression::Grouping(ref expr) => write!(f, "{}", expr),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum Statement {
 	Expression(Box<Expression>),
 	Print(Box<Expression>),
-}
-
-impl fmt::Display for Statement {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			&Statement::Expression(ref expr) => write!(f, "{};", expr),
-			&Statement::Print(ref expr) => write!(f, "print {}", expr),
-		}
-	}
 }

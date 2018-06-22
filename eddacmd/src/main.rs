@@ -1,21 +1,24 @@
 extern crate edda;
 
-use edda::scanner::Scanner;
-use edda::parser::Parser;
-use edda::interpreter::Interpreter;
+use edda::scanner::{scan_tokens, ScanError};
+use edda::parser::{parse_tokens, ParseError};
 
 fn main() {
 	let script = r#"
 print 1 + (3 * 4)*(3 * 4); // quick maths
 print "testi";
 print "multi\nline";
+print -> "parse error"
 "#;
 
-	println!("Script: `{}`", script);
+	println!("Running script:\n\n{}\n", script);
 
-    let tokens = Scanner::new(script.to_owned()).scan_tokens();
-    let statements = Parser::new(tokens).parse();
-
-    let mut interpreter = Interpreter::new();
-    println!("Result: `{}`", interpreter.interpret(&statements).unwrap());
+    let tokens = scan_tokens(script).unwrap();
+    let statements = match parse_tokens(&tokens) {
+    	Ok(statements) => statements,
+    	Err(parse_error) => {
+    		edda::print_parse_error(&parse_error, script);
+    		return
+    	},
+    };
 }
