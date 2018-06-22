@@ -13,15 +13,24 @@ pub struct ParseError<'a> {
     pub message: String,
 }
 
-pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, ParseError> {
+pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, Vec<ParseError>> {
     // early exit on empty token list (only contains EoF)
-    if tokens.len() == 1 {}
+    if tokens.len() == 1 { return Ok(Vec::new()) }
+    let mut errors = Vec::new();
+    let mut error_mode = false;
 
     let mut statements = Vec::new();
     let mut token_iter = tokens.iter().peekable();
 
     loop {
-        statements.push(statement(&mut token_iter)?);
+        match statement(&mut token_iter) {
+            Ok(stmt) => statements.push(stmt),
+            Err(err) => {
+                errors.push(err);
+                error_mode = true;
+                synchronize(&mut token_iter);
+            }
+        };
 
         match token_iter.peek().unwrap().ttype {
             TokenType::EoF => break,
@@ -29,7 +38,26 @@ pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, ParseError> {
         }
     }
 
-    Ok(statements)
+    if error_mode {
+        Err(errors)
+    } else {
+        Ok(statements)   
+    }
+}
+
+fn synchronize<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> () {
+    while let Some(token) = tokens.next() {
+        match token.ttype {
+            TokenType::EoF | TokenType::Semicolon => return,
+            _ => {}
+        }
+
+        match tokens.peek().unwrap().ttype {
+            // TODO: figure out what tokens will likely start a new statement
+            TokenType::Let | TokenType::Print | TokenType::Return => return,
+            _ => {}
+        }
+    }
 }
 
 fn statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
@@ -198,7 +226,7 @@ fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Par
         }
         _ => Err(ParseError {
             token: token,
-            message: format!("Unexpected {:?}.", token.ttype)
+            message: format!("Unexpected {:?}.", token.ttype),
         }),
     }
 }

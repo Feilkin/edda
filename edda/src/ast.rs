@@ -42,7 +42,7 @@ pub enum Expression {
 
 #[derive(Debug)]
 pub enum Statement {
-	Expression(Box<Expression>),
-	Print(Box<Expression>),
-	VarDeclaration(String, Option<Box<Expression>>),
+    Expression(Box<Expression>),
+    Print(Box<Expression>),
+    VarDeclaration(String, Option<Box<Expression>>),
 }

@@ -4,11 +4,11 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum Value {
-	Number(f64),
-	String(String),
-	True,
-	False,
-	Nil,
+    Number(f64),
+    String(String),
+    True,
+    False,
+    Nil,
 }
 
 // to_string because Rust

@@ -86,9 +86,8 @@ pub fn scan_tokens(source: &str) -> Result<Vec<Token>, ScanError> {
                     }
                 }
                 '/' => {
-                    let mut length = 0;
-
                     if chars.peek() == Some(&'/') {
+                        let mut length = 1;
                         while let Some(cc) = chars.next() {
                             length += 1;
 
