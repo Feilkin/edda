@@ -22,8 +22,10 @@ print "valid line";
         Err(parse_errors) => {
             for parse_error in parse_errors {
                 edda::print_parse_error(&parse_error, script);
+                println!("");
             }
             return;
         }
     };
+
 }

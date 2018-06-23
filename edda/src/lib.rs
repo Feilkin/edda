@@ -8,7 +8,8 @@ pub mod ast;
 pub mod value;
 pub mod scanner;
 pub mod parser;
-//pub mod interpreter; // out of order
+pub mod environment;
+pub mod interpreter; // out of order
 
 // TODO: move this somewhere else
 

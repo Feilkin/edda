@@ -6,19 +6,30 @@ use interpreter::RuntimeError;
 use value::Value;
 
 #[derive(Debug)]
-pub struct Environment {
+pub struct Environment<'a> {
 	values: HashMap<String, Value>,
+	enclosing: Option<&'a Environment<'a>>,
 }
 
-impl Environment {
-	pub fn new() -> Environment {
+impl<'a> Environment<'a> {
+	pub fn new() -> Environment<'a> {
 		Environment {
 			values: HashMap::new(),
+			enclosing: None,
 		}
 	}
 
-	pub fn define(&mut self, name: &str, value: Value) {
-		self.values.insert(name.to_owned(), value);
+	fn new_with_map(map: HashMap<String, Value>, enclosing: &'a Environment) -> Environment<'a> {
+		Environment {
+			values: map,
+			enclosing: Some(enclosing),
+		}
+	}
+
+	pub fn define(&'a self, name: &str, value: Value) -> Environment<'a> {
+		let mut map = HashMap::new();
+		map.insert(name.to_owned(), value);
+		Environment::new_with_map(map, &self)
 	}
 
 	pub fn get(&self, name: &str) -> Result<Value, RuntimeError> {
