@@ -3,23 +3,25 @@
 use ast::{Statement, Expression, Literal};
 use value::Value;
 use token::TokenType;
-//use environment::Environment;
+use environment::Environment;
 
 #[derive(Debug)]
-pub struct RuntimeError(&'static str);
+pub struct RuntimeError(String);
 
 impl RuntimeError {
-	pub fn new(reason: &'static str) -> RuntimeError {
-		RuntimeError(reason)
+	pub fn new(reason: &str) -> RuntimeError {
+		RuntimeError(reason.to_owned())
 	}
 }
 
 pub struct Interpreter {
+	environment: Environment,
 }
 
 impl Interpreter {
 	pub fn new() -> Interpreter {
 		Interpreter {
+			environment: Environment::new(),
 		}
 	}
 
@@ -32,11 +34,15 @@ impl Interpreter {
 			&Statement::VarDeclaration(ref id, ref initializer) => {
 				let mut value = Value::Nil;
 				if let Some(expr) = initializer.as_ref() {
-					value = self.evaluate(expr).unwrap();
+					value = self.evaluate(expr)?;
 				}
 
-				self.environment.define(id, value);
+				self.environment.define_local(id, value);
 				Ok(())
+			},
+			&Statement::GlobalDeclaration(ref id, ref initializer) => {
+				let value = self.evaluate(initializer)?;
+				self.environment.define_global(id, value)
 			}
 		}
 	}
@@ -52,80 +58,80 @@ impl Interpreter {
 				}
 			},
 			&Expression::Variable(ref id) => {
-				self.environment.get(id)
+				self.environment.get_local(id).and_then(|val| { Ok(val.clone()) })
 			},
 			&Expression::Unary{ ref operator, ref expr } => {
 				let value = self.evaluate(expr).unwrap();
 
-				match operator {
-					&TokenType::Minus => {
+				match operator.ttype {
+					TokenType::Minus => {
 						match value {
 							Value::Number(d) => Ok(Value::Number(-d)),
-							Value::String(_) => Err(RuntimeError("Cannot negate String.")),
-							Value::True | Value::False => Err(RuntimeError("Cannot negate boolean, use ! instead.")),
-							Value::Nil => Err(RuntimeError("Cannot negate nil.")),
+							Value::String(_) => Err(RuntimeError::new("Cannot negate String.")),
+							Value::True | Value::False => Err(RuntimeError::new("Cannot negate boolean, use ! instead.")),
+							Value::Nil => Err(RuntimeError::new("Cannot negate nil.")),
 						}
 					},
-					&TokenType::Bang => if self.is_truthy(value) { Ok(Value::False) } else { Ok(Value::True) },
-					_ => Err(RuntimeError("invalid unary operator in AST")),
+					TokenType::Bang => if self.is_truthy(value) { Ok(Value::False) } else { Ok(Value::True) },
+					_ => Err(RuntimeError::new("invalid unary operator in AST")),
 				}
 			},
 			&Expression::Binary{ ref operator, ref left, ref right } => {
 				let left = self.evaluate(left).unwrap();
 				let right = self.evaluate(right).unwrap();
 
-				match operator {
-					&TokenType::Minus => {
+				match operator.ttype {
+					TokenType::Minus => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => Ok(Value::Number(l - r)),
-							_ => Err(RuntimeError("Cannot do arithmetic on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do arithmetic on other than numbers.")),
 						}
 					},
-					&TokenType::Plus => {
+					TokenType::Plus => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
-							_ => Err(RuntimeError("Cannot do arithmetic on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do arithmetic on other than numbers.")),
 						}
 					},
-					&TokenType::Slash => {
+					TokenType::Slash => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => Ok(Value::Number(l / r)),
-							_ => Err(RuntimeError("Cannot do arithmetic on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do arithmetic on other than numbers.")),
 						}
 					},
-					&TokenType::Star => {
+					TokenType::Star => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => Ok(Value::Number(l * r)),
-							_ => Err(RuntimeError("Cannot do arithmetic on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do arithmetic on other than numbers.")),
 						}
 					},
-					&TokenType::Greater => {
+					TokenType::Greater => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => if l > r { Ok(Value::True) } else { Ok(Value::False) },
-							_ => Err(RuntimeError("Cannot do order comparison on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do order comparison on other than numbers.")),
 						}
 					},
-					&TokenType::GreaterEqual => {
+					TokenType::GreaterEqual => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => if l >= r { Ok(Value::True) } else { Ok(Value::False) },
-							_ => Err(RuntimeError("Cannot do order comparison on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do order comparison on other than numbers.")),
 						}
 					},
-					&TokenType::Less => {
+					TokenType::Less => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => if l < r { Ok(Value::True) } else { Ok(Value::False) },
-							_ => Err(RuntimeError("Cannot do order comparison on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do order comparison on other than numbers.")),
 						}
 					},
-					&TokenType::LessEqual => {
+					TokenType::LessEqual => {
 						match (left, right) {
 							(Value::Number(l), Value::Number(r)) => if l <= r { Ok(Value::True) } else { Ok(Value::False) },
-							_ => Err(RuntimeError("Cannot do order comparison on other than numbers.")),
+							_ => Err(RuntimeError::new("Cannot do order comparison on other than numbers.")),
 						}
 					},
-					&TokenType::BangEqual => if !self.is_equal(&left, &right) { Ok(Value::True) } else { Ok(Value::False) },
-					&TokenType::EqualEqual => if self.is_equal(&left, &right) { Ok(Value::True) } else { Ok(Value::False) },
-					_ => Err(RuntimeError("invalid binary operator in AST")),
+					TokenType::BangEqual => if !self.is_equal(&left, &right) { Ok(Value::True) } else { Ok(Value::False) },
+					TokenType::EqualEqual => if self.is_equal(&left, &right) { Ok(Value::True) } else { Ok(Value::False) },
+					_ => Err(RuntimeError::new("invalid binary operator in AST")),
 				}
 			},
 			&Expression::Grouping(ref expr) => { self.evaluate(expr) },

@@ -2,16 +2,22 @@ extern crate edda;
 
 use edda::scanner::{scan_tokens, ScanError};
 use edda::parser::{parse_tokens, ParseError};
+use edda::interpreter::{Interpreter, RuntimeError};
 
 fn main() {
     let script = r#"
 print 1 + (3 * 4)*(3 * 4); // quick maths
-    testi
 print "testi";
-ripuli kakka neekeri;
 print "multi\nline";
-print -> "parse error";
-print "valid line";
+
+let a = "testi";
+print a;
+
+let b = 3;
+
+print b + 3;
+
+print a + b;
 "#;
 
     println!("Running script:\n\n{}\n", script);
@@ -28,4 +34,12 @@ print "valid line";
         }
     };
 
+    let mut interpreter = Interpreter::new();
+
+    match interpreter.interpret(&statements) {
+    	Ok(_) => {},
+    	Err(err) => {
+    		println!("Runtime error: {:?}", err);
+    	}
+    }
 }

@@ -49,6 +49,7 @@ pub enum TokenType {
     Nil,
     EoF,
     Return,
+    Global,
 }
 
 lazy_static! {
@@ -65,6 +66,7 @@ lazy_static! {
         m.insert("nil", TokenType::Nil);
         m.insert("print", TokenType::Print);
         m.insert("return", TokenType::Return);
+        m.insert("global", TokenType::Global);
         m
     };
 }

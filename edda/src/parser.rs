@@ -23,7 +23,7 @@ pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, Vec<ParseErro
     let mut token_iter = tokens.iter().peekable();
 
     loop {
-        match statement(&mut token_iter) {
+        match declaration(&mut token_iter) {
             Ok(stmt) => statements.push(stmt),
             Err(err) => {
                 errors.push(err);
@@ -57,6 +57,66 @@ fn synchronize<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> () {
             TokenType::Let | TokenType::Print | TokenType::Return => return,
             _ => {}
         }
+    }
+}
+
+fn declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
+    match tokens.peek().unwrap().ttype {
+        TokenType::Let => {
+            tokens.next(); // consume the Let
+            match tokens.peek().unwrap().ttype {
+                TokenType::Global => {
+                    // global declaration
+                    unimplemented!()
+                },
+                TokenType::Identifier(_) => {
+                    variable_declaration(tokens)
+                },
+                _ => {
+                    let next = tokens.next().unwrap();
+                    Err(ParseError{
+                        token: next,
+                        message: format!("Unexpected {:?}, expected identifier or 'global'.", next)
+                    })
+                }
+            }
+        }
+        _ => {
+            statement(tokens)
+        }
+    }
+}
+
+fn variable_declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
+    let identifier = match tokens.next().unwrap().ttype {
+        TokenType::Identifier(ref id) => { id.to_owned() },
+        _ => panic!("expected identifier")
+    };
+
+    let initializer = match tokens.peek().unwrap().ttype {
+        TokenType::Semicolon => {
+            Ok(None)
+        },
+        TokenType::Equal => {
+            tokens.next();
+            Ok(Some(Box::new(expression(tokens)?)))
+        },
+        _ => {
+            let next = tokens.next().unwrap();
+            Err(ParseError {
+                token: next,
+                message: format!("Unexpected {:?}, expected ';' or '='.", next),
+            })
+        }
+    }?;
+
+    let next = tokens.next().unwrap();
+    match next.ttype {
+        TokenType::Semicolon => Ok(Statement::VarDeclaration(identifier, initializer)),
+        _ => Err(ParseError {
+            token: next,
+            message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
+        }),
     }
 }
 
@@ -204,6 +264,7 @@ fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Par
     let token = tokens.next().unwrap();
 
     match token.ttype {
+        TokenType::Identifier(ref id) => Ok(Expression::Variable(id.clone())),
         TokenType::Number(val) => Ok(Expression::Literal(Literal::Number(val))),
         TokenType::String(ref val) => Ok(Expression::Literal(Literal::String(val.clone()))),
         TokenType::False => Ok(Expression::Literal(Literal::Boolean(false))),

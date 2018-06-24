@@ -45,4 +45,5 @@ pub enum Statement {
     Expression(Box<Expression>),
     Print(Box<Expression>),
     VarDeclaration(String, Option<Box<Expression>>),
+    GlobalDeclaration(String, Box<Expression>),
 }

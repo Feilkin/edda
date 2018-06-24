@@ -37,13 +37,16 @@ Export        = "export"
 True          = "true"
 False         = "false"
 Nil           = "nil"
+Global        = "global"
 
 # syntax
 
 script          = declaration* exportStatement? EoF ;
 declaration     = varDeclaration
+                | globDeclaration
                 | statement ;
 varDeclaration  = Let Identifier (Equal expression)? Semicolon ;
+globDeclaration = Let Global Identifier Equal expression Semicolon ;
 statement       = exprStatement
                 | printStatement ;
 exprStatement   = expression Semicolon ;
