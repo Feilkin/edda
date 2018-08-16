@@ -50,6 +50,7 @@ pub enum TokenType {
     EoF,
     Return,
     Global,
+    Parkkila,
 }
 
 lazy_static! {
@@ -67,6 +68,7 @@ lazy_static! {
         m.insert("print", TokenType::Print);
         m.insert("return", TokenType::Return);
         m.insert("global", TokenType::Global);
+        m.insert("parkkila", TokenType::Parkkila);
         m
     };
 }

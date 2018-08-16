@@ -5,7 +5,7 @@ use std::fmt;
 
 use token::Token;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
@@ -24,9 +24,11 @@ impl fmt::Display for Literal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Literal),
+    FunctionDeclaration(Vec<Token>, Box<Expression>),
+    BlockExpression(Vec<Statement>, Box<Expression>),
     Unary {
         operator: Token,
         expr: Box<Expression>,
@@ -40,10 +42,11 @@ pub enum Expression {
     Variable(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Box<Expression>),
     Print(Box<Expression>),
     VarDeclaration(String, Option<Box<Expression>>),
     GlobalDeclaration(String, Box<Expression>),
+    BlockStatement(Vec<Statement>),
 }

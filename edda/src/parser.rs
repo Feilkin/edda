@@ -1,11 +1,11 @@
 //! Parser
 //! parses and stuff
 
-use std::slice::Iter;
 use std::iter::Peekable;
+use std::slice::Iter;
 
-use token::{Token, TokenType};
 use ast::{Expression, Literal, Statement};
+use token::{Token, TokenType};
 
 #[derive(Debug)]
 pub struct ParseError<'a> {
@@ -15,7 +15,9 @@ pub struct ParseError<'a> {
 
 pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, Vec<ParseError>> {
     // early exit on empty token list (only contains EoF)
-    if tokens.len() == 1 { return Ok(Vec::new()) }
+    if tokens.len() == 1 {
+        return Ok(Vec::new());
+    }
     let mut errors = Vec::new();
     let mut error_mode = false;
 
@@ -41,7 +43,7 @@ pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, Vec<ParseErro
     if error_mode {
         Err(errors)
     } else {
-        Ok(statements)   
+        Ok(statements)
     }
 }
 
@@ -65,42 +67,78 @@ fn declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, 
         TokenType::Let => {
             tokens.next(); // consume the Let
             match tokens.peek().unwrap().ttype {
-                TokenType::Global => {
-                    // global declaration
-                    unimplemented!()
-                },
-                TokenType::Identifier(_) => {
-                    variable_declaration(tokens)
-                },
+                TokenType::Global => global_declaration(tokens),
+                TokenType::Identifier(_) => variable_declaration(tokens),
                 _ => {
                     let next = tokens.next().unwrap();
-                    Err(ParseError{
+                    Err(ParseError {
                         token: next,
-                        message: format!("Unexpected {:?}, expected identifier or 'global'.", next)
+                        message: format!("Unexpected {:?}, expected identifier or 'global'.", next),
                     })
                 }
             }
         }
-        _ => {
-            statement(tokens)
-        }
+        _ => statement(tokens),
     }
 }
 
-fn variable_declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
+fn global_declaration<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Statement, ParseError<'a>> {
+    tokens.next(); // consume Global
+
+    let identifier = match tokens.peek().unwrap().ttype {
+        TokenType::Identifier(ref id) => {
+            tokens.next();
+            Ok(id.to_owned())
+        }
+        _ => {
+            let next = tokens.next().unwrap();
+            Err(ParseError {
+                token: next,
+                message: format!("Unexpected {:?}, expected Identifier.", next.ttype),
+            })
+        }
+    }?;
+
+    let initializer = match tokens.peek().unwrap().ttype {
+        TokenType::Equal => {
+            tokens.next(); // consume Equal
+            Ok(Box::new(expression(tokens)?))
+        }
+        _ => {
+            let next = tokens.next().unwrap();
+            Err(ParseError {
+                token: next,
+                message: format!("Unexpected {:?}, expected '='.", next.ttype),
+            })
+        }
+    }?;
+
+    let next = tokens.next().unwrap();
+    match next.ttype {
+        TokenType::Semicolon => Ok(Statement::GlobalDeclaration(identifier, initializer)),
+        _ => Err(ParseError {
+            token: next,
+            message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
+        }),
+    }
+}
+
+fn variable_declaration<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Statement, ParseError<'a>> {
     let identifier = match tokens.next().unwrap().ttype {
-        TokenType::Identifier(ref id) => { id.to_owned() },
-        _ => panic!("expected identifier")
+        TokenType::Identifier(ref id) => id.to_owned(),
+        _ => panic!("expected identifier"),
     };
 
     let initializer = match tokens.peek().unwrap().ttype {
-        TokenType::Semicolon => {
-            Ok(None)
-        },
+        TokenType::Semicolon => Ok(None),
         TokenType::Equal => {
             tokens.next();
             Ok(Some(Box::new(expression(tokens)?)))
-        },
+        }
         _ => {
             let next = tokens.next().unwrap();
             Err(ParseError {
@@ -126,8 +164,24 @@ fn statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, Pa
             tokens.next();
             print_statement(tokens)
         }
+        TokenType::LeftBrace => {
+            tokens.next();
+            block_statement(tokens)
+        }
         _ => expression_statement(tokens),
     }
+}
+
+fn block_statement<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Statement, ParseError<'a>> {
+    let mut statements = Vec::new();
+
+    while tokens.peek().unwrap().ttype != TokenType::RightBrace {
+        statements.push(declaration(tokens)?);
+    }
+
+    Ok(Statement::BlockStatement(statements))
 }
 
 fn print_statement<'a>(
@@ -285,9 +339,44 @@ fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Par
                 }),
             }
         }
+        TokenType::Arrow => {
+            let next = tokens.next().unwrap();
+            match next.ttype {
+                TokenType::LeftBrace => (),
+                _ => {
+                    return Err(ParseError {
+                        token: next,
+                        message: format!(
+                            "Unexpected {:?}, expected closing parenthesis ')'.",
+                            next.ttype
+                        ),
+                    })
+                }
+            };
+            let body = block_expression(tokens)?;
+
+            Ok(Expression::FunctionDeclaration(Vec::new(), Box::new(body)))
+        }
+        TokenType::LeftBrace => block_expression(tokens),
         _ => Err(ParseError {
             token: token,
             message: format!("Unexpected {:?}.", token.ttype),
         }),
     }
+}
+
+fn block_expression<'a>(
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Expression, ParseError<'a>> {
+    let mut statements = Vec::new();
+
+    while tokens.peek().unwrap().ttype != TokenType::RightBrace {
+        statements.push(declaration(tokens)?);
+    }
+    tokens.next(); // consume the closing brace
+
+    Ok(Expression::BlockExpression(
+        statements,
+        Box::new(Expression::Literal(Literal::Nil)),
+    ))
 }

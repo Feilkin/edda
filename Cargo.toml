@@ -3,4 +3,5 @@
 members = [
 	"edda",
 	"eddacmd",
+	"eddagui",
 ]

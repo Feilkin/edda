@@ -1,0 +1,12 @@
+[package]
+name = "eddagui"
+version = "0.1.0"
+authors = ["Aatu Hieta <aatu@hieta.fi>"]
+
+[dependencies]
+lazy_static = "*"
+edda = { path = "../edda" }
+glium = { version = "0.22", default-features = true }
+imgui = "0.0.20"
+imgui-glium-renderer = "0.0.20"
+imgui-sys = { version = "0.0.20", features = ["glium"] }

@@ -66,6 +66,8 @@ primary         = Number
                 | Nil
                 | LeftParen expression RightParen
                 | Identifier
+                | Global Identifier
                 | funcExpression ;
+paramList       = LeftParen (Identifier (Comma Identifier)* )? RightParen ;
 funcExpression  = paramList? Arrow blockExpression ;
-blockExpression = LeftBrace declaration * expression? RightBrace ;
+blockExpression = LeftBrace declaration* expression? RightBrace ;

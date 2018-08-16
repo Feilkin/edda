@@ -1,4 +1,8 @@
 // Sample edda script
 
-let hello = -> { print "hello" }
-hello();
+let hello = -> { print "hello"; };
+//hello();
+
+let greeting = "hello, world!";
+
+print greeting;
