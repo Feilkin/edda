@@ -5,7 +5,7 @@ authors = ["Aatu Hieta <aatu@hieta.fi>"]
 
 [dependencies]
 lazy_static = "*"
-edda = { path = "../edda" }
+edda = { path = "../edda", default-features = false }
 glium = { version = "0.22", default-features = true }
 imgui = "0.0.20"
 imgui-glium-renderer = "0.0.20"

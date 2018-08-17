@@ -48,7 +48,9 @@ declaration     = varDeclaration
 varDeclaration  = Let Identifier (Equal expression)? Semicolon ;
 globDeclaration = Let Global Identifier Equal expression Semicolon ;
 statement       = exprStatement
-                | printStatement ;
+                | printStatement
+                | blockStatement ;
+blockStatement  = LeftBrace declaration* RightBrace ;
 exprStatement   = expression Semicolon ;
 printStatement  = Print expression Semicolon ;
 exportStatement = Export expression (Comma expression)* Semicolon ;
@@ -57,8 +59,8 @@ equality        = comparison ( ( BangEquality | EqualityEquality ) comparison )*
 comparsion      = addition ( ( Less | LessEqual | Greater | GreaterEqual ) addition )* ;
 addition        = multiplication ( ( Minus | Plus ) multiplication )* ;
 multiplication  = unary ( ( Slash | Star ) unary )* ;
-unary           = ( Bang | Minus ) unary
-                | primary ;
+unary           = ( Bang | Minus ) unary | call ;
+call            = primary ( LeftParen arguments? RightParen )* ;
 primary         = Number
                 | String
                 | True
@@ -69,5 +71,6 @@ primary         = Number
                 | Global Identifier
                 | funcExpression ;
 paramList       = LeftParen (Identifier (Comma Identifier)* )? RightParen ;
+arguments       = expression ( Comma expression )* ;
 funcExpression  = paramList? Arrow blockExpression ;
 blockExpression = LeftBrace declaration* expression? RightBrace ;

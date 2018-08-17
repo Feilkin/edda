@@ -34,9 +34,12 @@ pub fn parse_tokens(tokens: &Vec<Token>) -> Result<Vec<Statement>, Vec<ParseErro
             }
         };
 
-        match token_iter.peek().unwrap().ttype {
-            TokenType::EoF => break,
-            _ => {}
+        match token_iter.peek() {
+            Some(ref token) => match token.ttype {
+                TokenType::EoF => break,
+                _ => {}
+            },
+            None => break,
         }
     }
 
@@ -206,7 +209,7 @@ fn expression_statement<'a>(
 
     let next = tokens.next().unwrap();
     match next.ttype {
-        TokenType::Semicolon => Ok(Statement::Print(Box::new(expr))),
+        TokenType::Semicolon => Ok(Statement::Expression(Box::new(expr))),
         _ => Err(ParseError {
             token: next,
             message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
@@ -311,7 +314,51 @@ fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Parse
         _ => {}
     }
 
-    primary(tokens)
+    call(tokens)
+}
+
+fn call<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+    let mut expr = primary(tokens)?;
+
+    loop {
+        if tokens.peek().unwrap().ttype == TokenType::LeftParen {
+            tokens.next().unwrap(); // consume LeftParen
+            expr = finish_call(expr, tokens)?;
+        } else {
+            break;
+        }
+    }
+
+    Ok(expr)
+}
+
+fn finish_call<'a>(
+    callee: Expression,
+    tokens: &mut Peekable<Iter<'a, Token>>,
+) -> Result<Expression, ParseError<'a>> {
+    let mut arguments = Vec::new();
+
+    if tokens.peek().unwrap().ttype != TokenType::RightParen {
+        loop {
+            arguments.push(expression(tokens)?);
+
+            if tokens.peek().unwrap().ttype != TokenType::Comma {
+                break;
+            }
+        }
+    }
+
+    let next = tokens.next().unwrap();
+    match next.ttype {
+        TokenType::RightParen => Ok(Expression::FunctionCall(Box::new(callee), arguments)),
+        _ => Err(ParseError {
+            token: next,
+            message: format!(
+                "Unexpected {:?}, expected closing parenthesis ')'.",
+                next.ttype
+            ),
+        }),
+    }
 }
 
 fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {

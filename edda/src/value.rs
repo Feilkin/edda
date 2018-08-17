@@ -2,7 +2,6 @@
 
 use ast::Expression;
 use std::fmt;
-use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -11,7 +10,11 @@ pub enum Value {
     True,
     False,
     Nil,
-    Function(Rc<Expression>),
+    Function {
+        params: Vec<String>,
+        body: Box<Expression>,
+        arity: usize,
+    },
 }
 
 // to_string because Rust
@@ -24,7 +27,7 @@ impl fmt::Display for Value {
             &Value::True => write!(f, "true"),
             &Value::False => write!(f, "false"),
             &Value::Nil => write!(f, "nil"),
-            &Value::Function(_) => write!(f, "function[]"),
+            &Value::Function {..} => write!(f, "function[]"),
         }
     }
 }

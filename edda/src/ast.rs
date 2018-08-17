@@ -27,7 +27,8 @@ impl fmt::Display for Literal {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Literal),
-    FunctionDeclaration(Vec<Token>, Box<Expression>),
+    FunctionDeclaration(Vec<String>, Box<Expression>),
+    FunctionCall(Box<Expression>, Vec<Expression>),
     BlockExpression(Vec<Statement>, Box<Expression>),
     Unary {
         operator: Token,

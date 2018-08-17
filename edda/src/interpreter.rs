@@ -14,21 +14,43 @@ impl RuntimeError {
     }
 }
 
-pub struct Interpreter {
-    environment: Environment,
+pub trait Printer {
+    fn print(&mut self, text: &str) -> ();
 }
 
-impl Interpreter {
-    pub fn new() -> Interpreter {
+pub struct DefaultPrinter {}
+impl Printer for DefaultPrinter {
+    fn print(&mut self, text: &str) {
+        print!("{}", text);
+    }
+}
+
+pub struct Interpreter<P: Printer> {
+    environment: Environment,
+    pub printer: P
+}
+
+impl Interpreter<DefaultPrinter> {
+    pub fn new() -> Interpreter<DefaultPrinter> {
         Interpreter {
             environment: Environment::new(),
+            printer: DefaultPrinter {},
+        }
+    }
+}
+
+impl<P: Printer> Interpreter<P> {
+    pub fn new_with_printer(printer: P) -> Interpreter<P> {
+        Interpreter {
+            environment: Environment::new(),
+            printer: printer,
         }
     }
 
     fn execute(&mut self, stmt: &Statement) -> Result<(), RuntimeError> {
         match stmt {
             &Statement::Print(ref expr) => self.evaluate(expr).and_then(|val| {
-                println!("{}", val);
+                self.printer.print(&format!("{}\n", val));
                 Ok(())
             }),
             &Statement::Expression(ref expr) => self.evaluate(expr).and(Ok(())),
@@ -56,7 +78,41 @@ impl Interpreter {
 
     fn evaluate(&mut self, expr: &Expression) -> Result<Value, RuntimeError> {
         match expr {
-            &Expression::FunctionDeclaration(ref _id, ref _body) => Ok(Value::Nil),
+            &Expression::FunctionDeclaration(ref params, ref body) => {
+                Ok(Value::Function {
+                    params: params.clone(),
+                    body: body.clone(),
+                    arity: params.len(),
+                })
+            },
+            &Expression::FunctionCall(ref callee, ref args) => {
+                let (params, body, arity) = match self.evaluate(callee)? {
+                    Value::Function{ params, body, arity } => (params, body, arity),
+                    other @ _ => {
+                        return Err(RuntimeError(format!("Attempting to call a {:?}!", other)))
+                    }
+                };
+
+                self.environment.push_scope();
+
+                if args.len() != arity {
+                    return Err(RuntimeError(format!("Wrong number of arguments, got {}, expected {}", args.len(), arity)))
+                }
+
+                let mut i = 0;
+                for arg in args.into_iter() {
+                    let id = &params[i];
+                    let val = self.evaluate(arg)?;
+                    self.environment.define_local(id, val)?;
+
+                    i += 1;
+                }
+
+                let res = self.evaluate(&body)?;
+                self.environment.pop_scope();
+
+                Ok(res)
+            },
             &Expression::BlockExpression(ref statements, ref ret) => {
                 for statement in statements {
                     self.execute(statement).unwrap();
@@ -91,7 +147,7 @@ impl Interpreter {
                             Err(RuntimeError::new("Cannot negate boolean, use ! instead."))
                         }
                         Value::Nil => Err(RuntimeError::new("Cannot negate nil.")),
-                        Value::Function(_) => Err(RuntimeError::new("Cannot negate function.")),
+                        Value::Function {..} => Err(RuntimeError::new("Cannot negate function.")),
                     },
                     TokenType::Bang => if self.is_truthy(value) {
                         Ok(Value::False)
@@ -198,7 +254,7 @@ impl Interpreter {
             Value::True => true,
             Value::False => false,
             Value::Nil => false,
-            Value::Function(_) => true,
+            Value::Function{..} => true,
         }
     }
 
