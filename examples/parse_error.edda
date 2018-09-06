@@ -8,3 +8,26 @@ let other = "some other valid lines";
 
 more invalid lines!
 
+// This is what the parse error should look like
+//
+//Parse error on line 5: Unexpected Identifier("is"), expected semicolon ';'.
+//--------------------------------------------------------------------------------
+// line | [...] 
+//    1 | // look at this, I made a cool parse error printer
+//    2 | 
+//    3 | let valid = "this is valid!";
+//    4 | 
+//    5 | let invalid = this is invalid!
+//      :                    ^^--- Unexpected Identifier("is"), expected semicolon ';'.
+//
+//Parse error on line 9: Unexpected Identifier("invalid"), expected semicolon ';'.
+//--------------------------------------------------------------------------------
+// line | [...] 
+//    5 | let invalid = this is invalid!
+//    6 | 
+//    7 | let other = "some other valid lines";
+//    8 | 
+//    9 | more invalid lines!
+//      :      ^^^^^^^--- Unexpected Identifier("invalid"), expected semicolon ';'.
+//
+
