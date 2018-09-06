@@ -1,35 +1,34 @@
 extern crate edda;
 
+use std::env;
+use std::fs::File;
+use std::io::prelude::*;
+
 use edda::interpreter::{Interpreter, RuntimeError};
 use edda::parser::{parse_tokens, ParseError};
 use edda::scanner::{scan_tokens, ScanError};
 
 fn main() {
-    let script = r#"
-print 1 + (3 * 4)*(3 * 4); // quick maths
-print "testi";
-print "multi\nline";
+    let args: Vec<_> = env::args().collect();
+    let mut filename = "../examples/helloworld.edda";
 
-let global globaali = "penis";
+    if args.len() > 1 {
+        filename = &args[1];
+    }
 
-let a = "testi";
-print a;
+    let mut f = File::open(filename).expect("file not found");
 
-let b = 3;
+    let mut script = String::new();
+    f.read_to_string(&mut script)
+        .expect("something went wrong reading the file");
 
-print b + 3;
 
-print a + b;
-"#;
-
-    println!("Running script:\n\n{}\n", script);
-
-    let tokens = scan_tokens(script).unwrap();
+    let tokens = scan_tokens(&script).unwrap();
     let statements = match parse_tokens(&tokens) {
         Ok(statements) => statements,
         Err(parse_errors) => {
             for parse_error in parse_errors {
-                edda::print_parse_error(&parse_error, script);
+                edda::print_parse_error(&parse_error, &script);
                 println!("");
             }
             return;

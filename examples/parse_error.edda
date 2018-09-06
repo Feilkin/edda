@@ -1,0 +1,10 @@
+// look at this, I made a cool parse error printer
+
+let valid = "this is valid!";
+
+let invalid = this is invalid!
+
+let other = "some other valid lines";
+
+more invalid lines!
+
