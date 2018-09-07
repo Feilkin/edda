@@ -4,4 +4,5 @@ members = [
 	"edda",
 	"eddacmd",
 	"eddagui",
+	"eddatypes",
 ]

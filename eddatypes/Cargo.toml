@@ -1,0 +1,6 @@
+[package]
+name = "eddatypes"
+version = "0.1.0"
+authors = ["Aatu Hieta <aatu@hieta.fi>"]
+
+[dependencies]
