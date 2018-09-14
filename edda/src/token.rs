@@ -9,6 +9,16 @@ pub struct Token {
     pub end: usize,
 }
 
+impl Token {
+    pub fn dummy(ttype: TokenType) -> Token {
+        Token {
+            ttype,
+            start: 0,
+            end: 0,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Number(f64),
@@ -29,6 +39,10 @@ pub enum TokenType {
     Bang,
     BangEqual,
     Equal,
+    PlusEqual,
+    MinusEqual,
+    StarEqual,
+    SlashEqual,
     EqualEqual,
     LessEqual,
     GreaterEqual,
@@ -50,7 +64,8 @@ pub enum TokenType {
     EoF,
     Return,
     Global,
-    Parkkila,
+    If,
+    Else,
 }
 
 lazy_static! {
@@ -68,7 +83,8 @@ lazy_static! {
         m.insert("print", TokenType::Print);
         m.insert("return", TokenType::Return);
         m.insert("global", TokenType::Global);
-        m.insert("parkkila", TokenType::Parkkila);
+        m.insert("if", TokenType::If);
+        m.insert("else", TokenType::Else);
         m
     };
 }

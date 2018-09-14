@@ -7,6 +7,7 @@ extern crate imgui_glium_renderer;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
+use std::rc::Rc;
 
 use imgui::*;
 
@@ -15,6 +16,7 @@ use edda::parser::{parse_tokens, ParseError};
 use edda::scanner::{scan_tokens, ScanError};
 use edda::interpreter::{Interpreter, RuntimeError, Printer};
 use edda::token::TokenType;
+use edda::value::{Value, HostFunction};
 
 struct CustomPrinter {
     output: String
@@ -31,6 +33,7 @@ impl CustomPrinter {
 impl Printer for CustomPrinter {
     fn print(&mut self, text: &str) {
         self.output.push_str(text);
+        println!("from edda: {}", text);
     }
 }
 
@@ -111,6 +114,8 @@ impl Node {
     fn get_title(&self) -> &str {
         match self.data {
             NodeType::Statement(ref stmt) => match stmt {
+                &Statement::For(..) => "For",
+                &Statement::If(..) => "If",
                 &Statement::Expression(_) => "ExprStmt",
                 &Statement::Print(_) => "Print",
                 &Statement::VarDeclaration(..) => "Binding",
@@ -181,6 +186,7 @@ fn create_expression_node(
     cursor_y += assume_height;
 
     let (inputs, outputs) = match expr {
+        &Expression::If(..) => (Vec::new(), Vec::new()),
         &Expression::Literal(ref lit) => (Vec::new(), vec![OutputType::Expression]),
         &Expression::FunctionCall(..) => (Vec::new(), Vec::new()),
         &Expression::FunctionDeclaration(ref tokens, ref body) => {
@@ -274,6 +280,31 @@ fn create_statement_nodes(
         outputs.push(OutputType::Statement);
 
         match statement {
+            &Statement::For(..) => {
+                //
+            }
+            &Statement::If(ref cond, ref then, ref else_body) => {
+                inputs.push(InputType::Expression);
+                outputs.push(OutputType::Statement); // then
+                outputs.push(OutputType::Statement); // else
+
+                let child_node_id = create_expression_node(
+                    &cond,
+                    &mut nodes,
+                    &mut links,
+                    cursor_x - 128.0,
+                    cursor_y,
+                );
+                let child_link = Link {
+                    input_index: child_node_id,
+                    output_index: nodes.len(),
+                    input_slot: 0,
+                    output_slot: 1,
+                };
+
+                links.push(child_link);
+
+            }
             &Statement::Expression(ref expr) => {
                 inputs.push(InputType::Expression);
 
@@ -403,16 +434,20 @@ fn main() {
     let mut nodes = Vec::new();
     let mut links = Vec::new();
 
+    let mut state = State::default();
+
     let mut statements = match parse_statements(&script) {
         Ok(statements) => statements,
-        Err(_) => return,
+        Err(msg) => {
+            state.pending_output = Some(msg);
+            Vec::new()
+        },
     };
 
     if statements.len() > 0 {
         create_statement_nodes(&statements, &mut nodes, &mut links, 64.0, 64.0);
     }
 
-    let mut state = State::default();
     state.script.push_str(&script);
     let mut scrolling = (0.0, 0.0);
 
@@ -464,6 +499,12 @@ fn main() {
                 ui.same_line(0.0);
                 if ui.button(im_str!("Run"), (0.0, 0.0)) {
                     let mut interpreter = Interpreter::new_with_printer(CustomPrinter::new());
+                    interpreter.environment.define_local("host_print", Value::HostFunction(
+                        Rc::new(HostFunction::new(|args| {
+                                println!("host_print: {}", args[0]);
+                                Value::Nil
+                            }, 1)
+                        ))).unwrap();
                     match interpreter.interpret(&statements) {
                         Ok(_) => {
                             state.pending_output = Some(interpreter.printer.output);
@@ -663,6 +704,12 @@ fn draw_nodes(
 
 fn draw_statement_node_contents(ui: &Ui, stmt: &Statement) -> () {
     match stmt {
+        &Statement::For(..) => {}
+        &Statement::If(..) => {
+            ui.text(im_str!("Condition"));
+            ui.text(im_str!("Then"));
+            ui.text(im_str!("Else"));
+        }
         &Statement::Expression(ref expr) => {
             ui.text(im_str!("Expression"));
         }
@@ -693,6 +740,9 @@ fn draw_statement_node_contents(ui: &Ui, stmt: &Statement) -> () {
 
 fn draw_expression_node_contents(ui: &Ui, expr: &Expression) -> () {
     match expr {
+        &Expression::If(..) => {
+            ui.text(im_str!("TODO"));
+        },
         &Expression::Literal(ref lit) => {
             ui.text(im_str!("{}", lit));
         }

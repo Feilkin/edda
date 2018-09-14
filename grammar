@@ -18,6 +18,10 @@ Caret         = ^
 Bang          = !
 BangEqual     = !=
 Equal         = =
+PlusEqual     = +=
+MinusEqual    = -=
+StarEqual     = *=
+SlashEqual    = /=
 EqualEqual    = ==
 LessEqual     = <=
 GreaterEqual  = >=
@@ -38,6 +42,10 @@ True          = "true"
 False         = "false"
 Nil           = "nil"
 Global        = "global"
+If            = "if"
+Else          = "else"
+Return        = "return"
+
 
 # syntax
 
@@ -48,13 +56,22 @@ declaration     = varDeclaration
 varDeclaration  = Let Identifier (Equal expression)? Semicolon ;
 globDeclaration = Let Global Identifier Equal expression Semicolon ;
 statement       = exprStatement
+                | returnStatement
+                | ifStatement
+                | forStatement
                 | printStatement
                 | blockStatement ;
+returnStatement = Return expr ;
+ifStatement     = If expression blockStatement ( Else blockStatement )? ;
+forStatement    = For identifier In expression blockStatement ;
 blockStatement  = LeftBrace declaration* RightBrace ;
 exprStatement   = expression Semicolon ;
 printStatement  = Print expression Semicolon ;
 exportStatement = Export expression (Comma expression)* Semicolon ;
-expression      = equality ;
+expression      = ifExpression
+                | range ;
+ifExpression    = If expression blockExpression ( Else blockExpression )? ;
+range           = equality DotDot equality ;
 equality        = comparison ( ( BangEquality | EqualityEquality ) comparison )* ;
 comparsion      = addition ( ( Less | LessEqual | Greater | GreaterEqual ) addition )* ;
 addition        = multiplication ( ( Minus | Plus ) multiplication )* ;

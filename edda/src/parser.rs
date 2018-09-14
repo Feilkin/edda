@@ -1,6 +1,15 @@
 //! Parser
 //! parses and stuff
 
+//        `\.      ,/'
+//         |\\____//|
+//         )/_ `' _\(
+//        ,'/-`__'-\`\
+//        /. (_><_) ,\
+//        ` )/`--'\(`'  t u f t
+//          `      '
+
+
 use std::iter::Peekable;
 use std::slice::Iter;
 
@@ -8,8 +17,8 @@ use ast::{Expression, Literal, Statement};
 use token::{Token, TokenType};
 
 #[derive(Debug)]
-pub struct ParseError<'a> {
-    pub token: &'a Token,
+pub struct ParseError {
+    pub token: Token,
     pub message: String,
 }
 
@@ -65,18 +74,17 @@ fn synchronize<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> () {
     }
 }
 
-fn declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
+fn declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError> {
     match tokens.peek().unwrap().ttype {
         TokenType::Let => {
             tokens.next(); // consume the Let
             match tokens.peek().unwrap().ttype {
                 TokenType::Global => global_declaration(tokens),
                 TokenType::Identifier(_) => variable_declaration(tokens),
-                _ => {
-                    let next = tokens.next().unwrap();
+                ref token @ _ => {
                     Err(ParseError {
-                        token: next,
-                        message: format!("Unexpected {:?}, expected identifier or 'global'.", next),
+                        token: (*tokens.peek().unwrap()).clone(),
+                        message: format!("Unexpected {:?}, expected identifier or 'global'.", token),
                     })
                 }
             }
@@ -87,7 +95,7 @@ fn declaration<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, 
 
 fn global_declaration<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Statement, ParseError<'a>> {
+) -> Result<Statement, ParseError> {
     tokens.next(); // consume Global
 
     let identifier = match tokens.peek().unwrap().ttype {
@@ -95,11 +103,10 @@ fn global_declaration<'a>(
             tokens.next();
             Ok(id.to_owned())
         }
-        _ => {
-            let next = tokens.next().unwrap();
+        ref token @ _ => {
             Err(ParseError {
-                token: next,
-                message: format!("Unexpected {:?}, expected Identifier.", next.ttype),
+                token: (*tokens.peek().unwrap()).clone(),
+                message: format!("Unexpected {:?}, expected Identifier.", token),
             })
         }
     }?;
@@ -109,11 +116,10 @@ fn global_declaration<'a>(
             tokens.next(); // consume Equal
             Ok(Box::new(expression(tokens)?))
         }
-        _ => {
-            let next = tokens.next().unwrap();
+        ref token @ _ => {
             Err(ParseError {
-                token: next,
-                message: format!("Unexpected {:?}, expected '='.", next.ttype),
+                token: (*tokens.peek().unwrap()).clone(),
+                message: format!("Unexpected {:?}, expected '='.", token),
             })
         }
     }?;
@@ -122,7 +128,7 @@ fn global_declaration<'a>(
     match next.ttype {
         TokenType::Semicolon => Ok(Statement::GlobalDeclaration(identifier, initializer)),
         _ => Err(ParseError {
-            token: next,
+            token: next.clone(),
             message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
         }),
     }
@@ -130,7 +136,7 @@ fn global_declaration<'a>(
 
 fn variable_declaration<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Statement, ParseError<'a>> {
+) -> Result<Statement, ParseError> {
     let identifier = match tokens.next().unwrap().ttype {
         TokenType::Identifier(ref id) => id.to_owned(),
         _ => panic!("expected identifier"),
@@ -142,11 +148,10 @@ fn variable_declaration<'a>(
             tokens.next();
             Ok(Some(Box::new(expression(tokens)?)))
         }
-        _ => {
-            let next = tokens.next().unwrap();
+        ref token @ _ => {
             Err(ParseError {
-                token: next,
-                message: format!("Unexpected {:?}, expected ';' or '='.", next),
+                token: (*tokens.peek().unwrap()).clone(),
+                message: format!("Unexpected {:?}, expected ';' or '='.", token),
             })
         }
     }?;
@@ -155,48 +160,94 @@ fn variable_declaration<'a>(
     match next.ttype {
         TokenType::Semicolon => Ok(Statement::VarDeclaration(identifier, initializer)),
         _ => Err(ParseError {
-            token: next,
+            token: next.clone(),
             message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
         }),
     }
 }
 
-fn statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError<'a>> {
+fn statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError> {
     match tokens.peek().unwrap().ttype {
+        TokenType::If => {
+            tokens.next();
+            if_statement(tokens)
+        }
+        TokenType::For => {
+            tokens.next().unwrap();
+            for_statement(tokens)
+        }
         TokenType::Print => {
             tokens.next();
             print_statement(tokens)
         }
         TokenType::LeftBrace => {
-            tokens.next();
             block_statement(tokens)
         }
         _ => expression_statement(tokens),
     }
 }
 
+fn if_statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError> {
+    let condition = expression(tokens)?;
+    let then = block_statement(tokens)?;
+    let mut else_body = None;
+
+    if tokens.peek().unwrap().ttype == TokenType::Else {
+        tokens.next().unwrap(); // consume the Else
+        else_body = Some(Box::new(block_statement(tokens)?));
+    }
+
+    Ok(Statement::If(Box::new(condition), Box::new(then), else_body))
+}
+
+fn for_statement<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Statement, ParseError> {
+    let ids = expression(tokens)?;
+    // consume In
+    let next = tokens.next().unwrap();
+    match next.ttype {
+        TokenType::In => (),
+        _ => return Err(ParseError {
+            token: next.clone(),
+            message: format!("Unexpected {:?}, expected 'in'.", next.ttype),
+        }),
+    }
+
+    let iter = expression(tokens)?;
+    let body = block_statement(tokens)?;
+
+    let mut params = Vec::new();
+    params.push(match ids {
+            Expression::Variable(ref id) => id.to_string(),
+            _ => panic!("Unexpected {:?}", ids),
+    });
+    Ok(Statement::For(params, Box::new(iter), Box::new(body)))
+}
+
 fn block_statement<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Statement, ParseError<'a>> {
+) -> Result<Statement, ParseError> {
     let mut statements = Vec::new();
 
+    tokens.next().unwrap(); // consume LeftBrace
     while tokens.peek().unwrap().ttype != TokenType::RightBrace {
         statements.push(declaration(tokens)?);
     }
+
+    tokens.next().unwrap(); // consume the RightBrace
 
     Ok(Statement::BlockStatement(statements))
 }
 
 fn print_statement<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Statement, ParseError<'a>> {
+) -> Result<Statement, ParseError> {
     let expr = expression(tokens)?;
 
     let next = tokens.next().unwrap();
     match next.ttype {
         TokenType::Semicolon => Ok(Statement::Print(Box::new(expr))),
         _ => Err(ParseError {
-            token: next,
+            token: next.clone(),
             message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
         }),
     }
@@ -204,24 +255,102 @@ fn print_statement<'a>(
 
 fn expression_statement<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Statement, ParseError<'a>> {
+) -> Result<Statement, ParseError> {
     let expr = expression(tokens)?;
 
-    let next = tokens.next().unwrap();
-    match next.ttype {
-        TokenType::Semicolon => Ok(Statement::Expression(Box::new(expr))),
-        _ => Err(ParseError {
-            token: next,
-            message: format!("Unexpected {:?}, expected semicolon ';'.", next.ttype),
-        }),
+    match tokens.peek().unwrap().ttype {
+        TokenType::Semicolon => {
+            tokens.next().unwrap();
+            Ok(Statement::Expression(Box::new(expr)))
+        },
+        ref token @ _ => {
+            Err(ParseError {
+                token: (*tokens.peek().unwrap()).clone(),
+                message: format!("Unexpected {:?} in expression statement, expected semicolon ';'.", token),
+            })
+        },
     }
 }
 
-fn expression<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
-    equality(tokens)
+fn expression<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
+    match tokens.peek().unwrap().ttype {
+        TokenType::If => if_expression(tokens),
+        _ => range(tokens)
+    }
 }
 
-fn equality<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+fn if_expression<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
+    tokens.next().unwrap(); // consume the If
+
+    let condition = expression(tokens)?;
+    let then = block_expression(tokens)?;
+    let mut else_body = None;
+
+
+    if tokens.peek().unwrap().ttype == TokenType::Else {
+        tokens.next().unwrap(); // consume the Else
+        else_body = Some(Box::new(block_expression(tokens)?));
+    }
+
+    Ok(Expression::If(Box::new(condition), Box::new(then), else_body))
+}
+
+fn range<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
+    let mut left = equality(tokens)?;
+
+    while tokens.peek().unwrap().ttype == TokenType::DotDot {
+        // ranges (1 .. 10) should desugar to blocks that return iterator functions
+        // in future, I probably want Iterator traits or something
+
+        // 1 .. 10 = { let i = 1; -> { i += 1; if i > 10 { nil } else { i }}}
+
+        tokens.next().unwrap(); // consume the DotDot
+        let right = equality(tokens)?;
+
+        // create block expression to hold the counter variable
+        let block = Expression::BlockExpression(
+            vec![
+                // let i = 1;
+                Statement::VarDeclaration("i".to_owned(),
+                    Some(Box::new(left))),
+            ],
+            // -> {
+            Box::new(Expression::FunctionDeclaration(Vec::new(),
+                Box::new(Expression::BlockExpression(
+                    // i += 1;
+                    vec![Statement::Expression(Box::new(
+                        Expression::Binary {
+                            operator: Token::dummy(TokenType::PlusEqual),
+                            left: Box::new(Expression::Variable("i".to_owned())),
+                            right: Box::new(Expression::Literal(Literal::Number(1.0))),
+                        }
+                    ))],
+                    // if
+                    Box::new(
+                        Expression::If(
+                            // i > 10
+                            Box::new(Expression::Binary {
+                                operator: Token::dummy(TokenType::Greater),
+                                left: Box::new(Expression::Variable("i".to_owned())),
+                                right: Box::new(right),
+                            }),
+                            // nil
+                            Box::new(Expression::Literal(Literal::Nil)),
+                            // i
+                            Some(Box::new(Expression::Variable("i".to_owned()))),
+                        )
+                    )
+                )
+            ))),
+        );
+
+        left = block;
+    }
+
+    Ok(left)
+}
+
+fn equality<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
     let mut left = comparison(tokens)?;
 
     while match tokens.peek().unwrap().ttype {
@@ -240,7 +369,7 @@ fn equality<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Pa
     Ok(left)
 }
 
-fn comparison<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+fn comparison<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
     let mut left = addition(tokens)?;
 
     while match tokens.peek().unwrap().ttype {
@@ -261,7 +390,7 @@ fn comparison<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, 
     Ok(left)
 }
 
-fn addition<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+fn addition<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
     let mut left = multiplication(tokens)?;
 
     while match tokens.peek().unwrap().ttype {
@@ -282,7 +411,7 @@ fn addition<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Pa
 
 fn multiplication<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Expression, ParseError<'a>> {
+) -> Result<Expression, ParseError> {
     let mut left = unary(tokens)?;
 
     while match tokens.peek().unwrap().ttype {
@@ -301,7 +430,7 @@ fn multiplication<'a>(
     Ok(left)
 }
 
-fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
     match tokens.peek().unwrap().ttype {
         TokenType::Minus | TokenType::Bang => {
             let operator = tokens.next().unwrap().clone();
@@ -317,7 +446,17 @@ fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Parse
     call(tokens)
 }
 
-fn call<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
+//   ____
+//  (.   \
+//    \  |   
+//     \ |___(\--/)
+//   __/    (  . . )
+//  "'._.    '-.O.'
+//       '-.  \ "|\
+//          '.,,/'.,,mrf
+
+
+fn call<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
     let mut expr = primary(tokens)?;
 
     loop {
@@ -335,7 +474,7 @@ fn call<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseE
 fn finish_call<'a>(
     callee: Expression,
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Expression, ParseError<'a>> {
+) -> Result<Expression, ParseError> {
     let mut arguments = Vec::new();
 
     if tokens.peek().unwrap().ttype != TokenType::RightParen {
@@ -352,7 +491,7 @@ fn finish_call<'a>(
     match next.ttype {
         TokenType::RightParen => Ok(Expression::FunctionCall(Box::new(callee), arguments)),
         _ => Err(ParseError {
-            token: next,
+            token: next.clone(),
             message: format!(
                 "Unexpected {:?}, expected closing parenthesis ')'.",
                 next.ttype
@@ -361,38 +500,128 @@ fn finish_call<'a>(
     }
 }
 
-fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError<'a>> {
-    let token = tokens.next().unwrap();
-
-    match token.ttype {
-        TokenType::Identifier(ref id) => Ok(Expression::Variable(id.clone())),
-        TokenType::Number(val) => Ok(Expression::Literal(Literal::Number(val))),
-        TokenType::String(ref val) => Ok(Expression::Literal(Literal::String(val.clone()))),
-        TokenType::False => Ok(Expression::Literal(Literal::Boolean(false))),
-        TokenType::True => Ok(Expression::Literal(Literal::Boolean(true))),
-        TokenType::Nil => Ok(Expression::Literal(Literal::Nil)),
+fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParseError> {
+    match tokens.peek().unwrap().ttype {
+        TokenType::Identifier(ref id) => {
+            tokens.next().unwrap(); // consume the token
+            Ok(Expression::Variable(id.clone()))
+        },
+        TokenType::Number(val) => {
+            tokens.next().unwrap();
+            Ok(Expression::Literal(Literal::Number(val)))
+        },
+        TokenType::String(ref val) => {
+            tokens.next().unwrap();
+            Ok(Expression::Literal(Literal::String(val.clone())))
+        },
+        TokenType::False => {
+            tokens.next().unwrap();
+            Ok(Expression::Literal(Literal::Boolean(false)))
+        },
+        TokenType::True => {
+            tokens.next().unwrap();
+            Ok(Expression::Literal(Literal::Boolean(true)))
+        },
+        TokenType::Nil => {
+            tokens.next().unwrap();
+            Ok(Expression::Literal(Literal::Nil))
+        },
         TokenType::LeftParen => {
+            // LeftParen can start either a grouped expression or a arugment list
+            // for a function declaration
+            tokens.next().unwrap(); // consume the LeftParen
+
+            // early return for ()
+            if tokens.peek().unwrap().ttype == TokenType::RightParen {
+                return Ok(Expression::Literal(Literal::Nil));
+            }
+
+            // if next token is comma, it is a tuple
+            // if next token is right paren, it is a grouping
+            // anything else is a parse error
             let expr = expression(tokens)?;
 
-            let next = tokens.next().unwrap();
-            match next.ttype {
-                TokenType::RightParen => Ok(Expression::Grouping(Box::new(expr))),
-                _ => Err(ParseError {
-                    token: next,
+            let ret = match tokens.peek().unwrap().ttype {
+                TokenType::RightParen => {
+                    tokens.next().unwrap(); // consume the RightParen
+                    if tokens.peek().unwrap().ttype == TokenType::Arrow {
+                        let expressions = vec![expr];
+
+                        let params = expressions.iter().map(|e| {
+                            match e {
+                                Expression::Variable(ref id) => id.to_owned(),
+                                _ => panic!("Unexpected {:?}", e),
+                            }
+                        }).collect();
+
+                        // consume the arrow
+                        tokens.next().unwrap();
+                        let body = block_expression(tokens)?;
+                        Ok(Expression::FunctionDeclaration(params, Box::new(body)))
+                    } else {
+                        Ok(Expression::Grouping(Box::new(expr)))
+                    }
+                },
+                TokenType::Comma => {
+                    tokens.next().unwrap();
+                    let mut expressions = Vec::new();
+                    expressions.push(expr);
+
+                    while tokens.peek().unwrap().ttype != TokenType::RightParen {
+                        expressions.push(expression(tokens)?);
+                    }
+
+                    // consume the RightParen
+                    tokens.next().unwrap();
+
+                    match tokens.peek().unwrap().ttype {
+                        TokenType::RightParen => {
+                            // TODO: figure out tuples
+                            unimplemented!();
+                        },
+                        TokenType::Arrow => {
+                            // Arrow means FunctionDeclaration
+                            // map expressions to param list
+                            let params = expressions.iter().map(|e| {
+                                match e {
+                                    Expression::Variable(ref id) => id.to_string(),
+                                    _ => panic!("Unexpected {:?}", e),
+                                }
+                            }).collect();
+
+                            // consume the arrow
+                            tokens.next().unwrap();
+                            let body = block_expression(tokens)?;
+                            Ok(Expression::FunctionDeclaration(params, Box::new(body)))
+                        },
+                        ref token @ _ => Err(ParseError {
+                            token: (*tokens.peek().unwrap()).clone(),
+                            message: format!(
+                                "Unexpected {:?}",
+                                token
+                            ),
+                        }),
+                    }
+                },
+                ref token @ _ => Err(ParseError {
+                    token: (*tokens.peek().unwrap()).clone(),
                     message: format!(
-                        "Unexpected {:?}, expected closing parenthesis ')'.",
-                        next.ttype
+                        "Unexpected {:?}, expected closing parenthesis ')' or comma ','.",
+                        token
                     ),
                 }),
-            }
+            };
+
+            ret
         }
         TokenType::Arrow => {
-            let next = tokens.next().unwrap();
-            match next.ttype {
+            tokens.next().unwrap();
+            match tokens.peek().unwrap().ttype {
                 TokenType::LeftBrace => (),
                 _ => {
+                    let next = tokens.next().unwrap();
                     return Err(ParseError {
-                        token: next,
+                        token: next.clone(),
                         message: format!(
                             "Unexpected {:?}, expected closing parenthesis ')'.",
                             next.ttype
@@ -405,25 +634,55 @@ fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, Par
             Ok(Expression::FunctionDeclaration(Vec::new(), Box::new(body)))
         }
         TokenType::LeftBrace => block_expression(tokens),
-        _ => Err(ParseError {
-            token: token,
-            message: format!("Unexpected {:?}.", token.ttype),
-        }),
+        _ => {
+            let token = tokens.next().unwrap();
+            Err(ParseError {
+                token: token.clone(),
+                message: format!("Unexpected {:?}.", token.ttype),
+            })
+        },
     }
 }
 
 fn block_expression<'a>(
     tokens: &mut Peekable<Iter<'a, Token>>,
-) -> Result<Expression, ParseError<'a>> {
+) -> Result<Expression, ParseError> {
+    tokens.next().unwrap(); // consume the opening brace
+
     let mut statements = Vec::new();
+    let mut ret = None;
 
     while tokens.peek().unwrap().ttype != TokenType::RightBrace {
-        statements.push(declaration(tokens)?);
+        // clone the token iterator, so we don't consume any tokens if there is
+        // a parse error
+        let mut try_tokens = tokens.clone();
+        match declaration(&mut try_tokens) {
+            Ok(stmt) => statements.push(stmt),
+            Err(p_err) => {
+                ret = Some(expression(tokens).map_err(|_e| { p_err })?);
+                break;
+            }
+        }
+
+        while tokens.len() > try_tokens.len() {
+            tokens.next().unwrap();
+        }
     }
-    tokens.next(); // consume the closing brace
+
+    let next = tokens.next().unwrap(); // consume the closing brace
+    match next.ttype {
+        TokenType::RightBrace => (),
+        _ => return Err(ParseError {
+            token: next.clone(),
+            message: format!("Unexpected {:?}, expected closing brace '}}'.", next.ttype),
+        }),
+    }
 
     Ok(Expression::BlockExpression(
         statements,
-        Box::new(Expression::Literal(Literal::Nil)),
+        Box::new(match ret {
+            Some(expr) => expr,
+            None => Expression::Literal(Literal::Nil)
+        }),
     ))
 }

@@ -1,9 +1,10 @@
 //! Tree-walkin Interpreter for now
 
+use std::rc::Rc;
 use ast::{Expression, Literal, Statement};
 use environment::Environment;
 use token::TokenType;
-use value::Value;
+use value::{Value, Function, HostFunction};
 
 #[derive(Debug)]
 pub struct RuntimeError(String);
@@ -26,7 +27,7 @@ impl Printer for DefaultPrinter {
 }
 
 pub struct Interpreter<P: Printer> {
-    environment: Environment,
+    pub environment: Environment,
     pub printer: P
 }
 
@@ -49,6 +50,44 @@ impl<P: Printer> Interpreter<P> {
 
     fn execute(&mut self, stmt: &Statement) -> Result<(), RuntimeError> {
         match stmt {
+            &Statement::For(ref params, ref iter, ref body) => {
+                let iter_f = match self.evaluate(iter)? {
+                    Value::Function(ref func) => { Rc::clone(func) },
+                    _ => panic!("lol"),
+                };
+
+                let arg_vec = Vec::new();
+                let mut initial = self.call_function(Rc::clone(&iter_f), &arg_vec)?;
+
+                while match initial { Value::Nil => false, _ => true } {
+                    self.environment.push_scope();
+                    self.environment.define_local(&params[0], initial)?;
+                    self.execute(body)?;
+                    self.environment.pop_scope();
+
+                    initial = self.call_function(Rc::clone(&iter_f), &arg_vec)?;
+                }
+
+                Ok(())
+            },
+            &Statement::If(ref cond, ref then, ref else_body) => {
+                if is_truthy(self.evaluate(cond)?) {
+                    self.environment.push_scope();
+                    let ret = self.execute(then)?;
+                    self.environment.pop_scope();
+
+                    Ok(ret)
+                } else {
+                    if let Some(b) = else_body {
+                        self.environment.push_scope();
+                        let ret = self.execute(b)?;
+                        self.environment.pop_scope();
+                        Ok(ret)
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
             &Statement::Print(ref expr) => self.evaluate(expr).and_then(|val| {
                 self.printer.print(&format!("{}\n", val));
                 Ok(())
@@ -76,49 +115,69 @@ impl<P: Printer> Interpreter<P> {
         }
     }
 
+    fn call_function(&mut self, func: Rc<Function>, args: &Vec<Expression>) -> Result<Value, RuntimeError> {
+        self.environment.push_scope();
+
+        if args.len() != func.arity {
+            return Err(RuntimeError(format!("Wrong number of arguments, got {}, expected {}", args.len(), func.arity)))
+        }
+
+        let mut i = 0;
+        for arg in args.into_iter() {
+            let id = &func.params[i];
+            let val = self.evaluate(arg)?;
+            self.environment.define_local(id, val)?;
+
+            i += 1;
+        }
+
+        let res = self.evaluate(&func.body)?;
+        self.environment.pop_scope();
+
+        Ok(res)
+    }
+
+    fn call_host_function(&mut self, host_func: &Rc<HostFunction>, args: &Vec<Expression>) -> Result<Value, RuntimeError> {
+        let args_evaluated = args.into_iter().map(|arg| { self.evaluate(&arg).unwrap() }).collect();
+
+        Ok(host_func.call(&args_evaluated))
+    }
+
     fn evaluate(&mut self, expr: &Expression) -> Result<Value, RuntimeError> {
         match expr {
+            &Expression::If(ref cond, ref then, ref else_body) => {
+                if is_truthy(self.evaluate(cond)?) {
+                    self.evaluate(then)
+                } else {
+                    if let Some(b) = else_body {
+                        self.evaluate(b)
+                    } else {
+                        Ok(Value::Nil)
+                    }
+                }
+            },
             &Expression::FunctionDeclaration(ref params, ref body) => {
-                Ok(Value::Function {
-                    params: params.clone(),
-                    body: body.clone(),
-                    arity: params.len(),
-                })
+                Ok(Value::Function(Rc::new(Function::new(params.clone(), body.clone()))))
             },
             &Expression::FunctionCall(ref callee, ref args) => {
-                let (params, body, arity) = match self.evaluate(callee)? {
-                    Value::Function{ params, body, arity } => (params, body, arity),
+                // branch out to handle different types of functions
+                match self.evaluate(callee)? {
+                    Value::Function(ref func) => self.call_function(Rc::clone(func), args),
+                    Value::HostFunction(host_func) => self.call_host_function(&host_func, args),
                     other @ _ => {
                         return Err(RuntimeError(format!("Attempting to call a {:?}!", other)))
                     }
-                };
-
-                self.environment.push_scope();
-
-                if args.len() != arity {
-                    return Err(RuntimeError(format!("Wrong number of arguments, got {}, expected {}", args.len(), arity)))
                 }
-
-                let mut i = 0;
-                for arg in args.into_iter() {
-                    let id = &params[i];
-                    let val = self.evaluate(arg)?;
-                    self.environment.define_local(id, val)?;
-
-                    i += 1;
-                }
-
-                let res = self.evaluate(&body)?;
-                self.environment.pop_scope();
-
-                Ok(res)
             },
             &Expression::BlockExpression(ref statements, ref ret) => {
+                self.environment.push_scope();
                 for statement in statements {
                     self.execute(statement).unwrap();
                 }
 
-                self.evaluate(ret)
+                let ret_val = self.evaluate(ret)?;
+                self.environment.pop_scope();
+                Ok(ret_val)
             }
             &Expression::Literal(ref literal) => match literal {
                 &Literal::Number(d) => Ok(Value::Number(d)),
@@ -147,9 +206,9 @@ impl<P: Printer> Interpreter<P> {
                             Err(RuntimeError::new("Cannot negate boolean, use ! instead."))
                         }
                         Value::Nil => Err(RuntimeError::new("Cannot negate nil.")),
-                        Value::Function {..} => Err(RuntimeError::new("Cannot negate function.")),
+                        Value::Function {..} | Value::HostFunction(..) => Err(RuntimeError::new("Cannot negate function.")),
                     },
-                    TokenType::Bang => if self.is_truthy(value) {
+                    TokenType::Bang => if is_truthy(value) {
                         Ok(Value::False)
                     } else {
                         Ok(Value::True)
@@ -230,12 +289,12 @@ impl<P: Printer> Interpreter<P> {
                             "Cannot do order comparison on other than numbers.",
                         )),
                     },
-                    TokenType::BangEqual => if !self.is_equal(&left, &right) {
+                    TokenType::BangEqual => if !is_equal(&left, &right) {
                         Ok(Value::True)
                     } else {
                         Ok(Value::False)
                     },
-                    TokenType::EqualEqual => if self.is_equal(&left, &right) {
+                    TokenType::EqualEqual => if is_equal(&left, &right) {
                         Ok(Value::True)
                     } else {
                         Ok(Value::False)
@@ -247,30 +306,6 @@ impl<P: Printer> Interpreter<P> {
         }
     }
 
-    fn is_truthy(&self, value: Value) -> bool {
-        match value {
-            Value::Number(_) => true,
-            Value::String(_) => true,
-            Value::True => true,
-            Value::False => false,
-            Value::Nil => false,
-            Value::Function{..} => true,
-        }
-    }
-
-    fn is_equal(&self, left: &Value, right: &Value) -> bool {
-        match (left, right) {
-            (&Value::Nil, &Value::Nil) => true,
-            (&Value::Nil, _) => false,
-            (&Value::Number(l), &Value::Number(r)) => l == r,
-            (&Value::Number(_), _) => false,
-            (&Value::String(ref l), &Value::String(ref r)) => l == r,
-            (&Value::String(_), _) => false,
-            (&Value::True, &Value::True) | (&Value::False, &Value::False) => true,
-            (_, _) => false,
-        }
-    }
-
     pub fn interpret(&mut self, script: &Vec<Statement>) -> Result<Value, RuntimeError> {
         for statement in script {
             if let Err(error) = self.execute(statement) {
@@ -279,5 +314,29 @@ impl<P: Printer> Interpreter<P> {
         }
 
         Ok(Value::Nil)
+    }
+}
+
+fn is_truthy(value: Value) -> bool {
+    match value {
+        Value::Number(_) => true,
+        Value::String(_) => true,
+        Value::True => true,
+        Value::False => false,
+        Value::Nil => false,
+        Value::Function{..} | Value::HostFunction(_) => true,
+    }
+}
+
+fn is_equal(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (&Value::Nil, &Value::Nil) => true,
+        (&Value::Nil, _) => false,
+        (&Value::Number(l), &Value::Number(r)) => l == r,
+        (&Value::Number(_), _) => false,
+        (&Value::String(ref l), &Value::String(ref r)) => l == r,
+        (&Value::String(_), _) => false,
+        (&Value::True, &Value::True) | (&Value::False, &Value::False) => true,
+        (_, _) => false,
     }
 }

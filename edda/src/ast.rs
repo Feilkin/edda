@@ -41,6 +41,7 @@ pub enum Expression {
     },
     Grouping(Box<Expression>),
     Variable(String),
+    If(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
 }
 
 #[derive(Debug, Clone)]
@@ -50,4 +51,6 @@ pub enum Statement {
     VarDeclaration(String, Option<Box<Expression>>),
     GlobalDeclaration(String, Box<Expression>),
     BlockStatement(Vec<Statement>),
+    If(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
+    For(Vec<String>, Box<Expression>, Box<Statement>),
 }
