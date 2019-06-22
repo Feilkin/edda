@@ -17,12 +17,12 @@ impl Stack {
         }
     }
 
-    pub fn push<T: Value>(&mut self, value: T) {
-        T::push(value, self);
+    pub fn push<'a, T: Value<'a>>(&mut self, value: T) {
+        Value::push(value, self);
     }
 
-    pub fn pop<T: Value>(&mut self) -> T {
-        T::pop(self)
+    pub fn pop<'a, T: Value<'a>>(&mut self) -> T {
+        Value::pop(self)
     }
 
     pub fn push_bytes(&mut self, bytes: &[u8]) {
@@ -43,12 +43,14 @@ impl Stack {
     }
 }
 
-pub trait Value {
+use super::chunk::Constant;
+
+pub trait Value<'a> : Constant<'a> {
     fn push(self, stack: &mut Stack) -> ();
     fn pop(stack: &mut Stack) -> Self;
 }
 
-impl Value for f64 {
+impl<'a> Value<'a> for f64 {
     fn push(self, stack: &mut Stack) {
         let mut buf = [0u8; 8];
         buf.as_mut().write_f64::<LittleEndian>(self).unwrap();
@@ -61,4 +63,10 @@ impl Value for f64 {
 
         double
     }
+}
+
+impl<'a> Value<'a> for () {
+    fn push(self, _stack: &mut Stack) {}
+
+    fn pop(_stack: &mut Stack) -> () { () }
 }

@@ -41,7 +41,12 @@ pub fn disassemble_instruction(chunk: &Chunk, mut offset: usize) -> Result<usize
             let constant_val = chunk.get_constant::<f64>(constant_index as usize);
             print!("{:?}\t {}\t '{}'", OpCode::ConstantF64, constant_index, constant_val);
         },
-        op @ OpCode::NegateF64 | op @ OpCode::Return => print!("{:?}", op),
+        op @ OpCode::NegateF64 |
+        op @ OpCode::Return |
+        op @ OpCode::AddF64 |
+        op @ OpCode::SubstractF64 |
+        op @ OpCode::MultiplyF64 |
+        op @ OpCode::DivideF64 => print!("{:?}", op),
     };
 
     println!("");

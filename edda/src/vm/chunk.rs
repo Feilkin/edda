@@ -6,8 +6,20 @@ use std::convert::TryFrom;
 pub enum OpCode {
     Return = 0x01,
     ConstantU8 = 0x02,
-    ConstantF64 = 0x04,
-    NegateF64 = 0x32,
+    // u16 = 0x03
+    // u32 = 0x04
+    // u64 = 0x05
+    // i8  = 0x06
+    // i16 = 0x07
+    // i32 = 0x08
+    // i64 = 0x09
+    // f32 = 0x0a
+    ConstantF64 = 0x0b,
+    AddF64 = 0x10,
+    SubstractF64 = 0x11,
+    MultiplyF64 = 0x12,
+    DivideF64 = 0x13,
+    NegateF64 = 0x14,
 }
 
 // TODO: find a good way to automate this
@@ -18,8 +30,12 @@ impl TryFrom<u8> for OpCode {
         match byte {
             0x01 => Ok(OpCode::Return),
             0x02 => Ok(OpCode::ConstantU8),
-            0x04 => Ok(OpCode::ConstantF64),
-            0x32 => Ok(OpCode::NegateF64),
+            0x0b => Ok(OpCode::ConstantF64),
+            0x10 => Ok(OpCode::AddF64),
+            0x11 => Ok(OpCode::SubstractF64),
+            0x12 => Ok(OpCode::MultiplyF64),
+            0x13 => Ok(OpCode::DivideF64),
+            0x14 => Ok(OpCode::NegateF64),
             _ => Err("Invalid OpCode!"),
         }
     }
@@ -27,17 +43,22 @@ impl TryFrom<u8> for OpCode {
 
 // TODO: move to Constant crate?
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use crate::ast::Literal;
 
 type ConstantError = &'static str;
 type ConstantPool = Vec<u8>;
 
-pub trait Constant: Sized {
+pub trait Constant<'a>: Sized + TryFrom<&'a Literal> {
+    const OPCODE: OpCode;
+
     fn push(self, pool: &mut ConstantPool) -> usize;
     fn get(index: usize, pool: &ConstantPool) -> Result<(Self, usize), ConstantError>;
 }
 
 // TODO: move to different file??
-impl Constant for u8 {
+impl<'a> Constant<'a> for u8 {
+    const OPCODE: OpCode = OpCode::ConstantU8;
+
     fn push(self, pool: &mut ConstantPool) -> usize {
         pool.push(self);
 
@@ -50,7 +71,9 @@ impl Constant for u8 {
     }
 }
 
-impl Constant for f64 {
+impl<'a> Constant<'a> for f64 {
+    const OPCODE: OpCode = OpCode::ConstantF64;
+
     fn push(self, pool: &mut ConstantPool) -> usize {
         let mut buf = [0u8; 8];
         buf.as_mut().write_f64::<LittleEndian>(self).unwrap();
@@ -65,6 +88,13 @@ impl Constant for f64 {
 
         Ok((double, 8))
     }
+}
+
+impl<'a> Constant<'a> for () {
+    const OPCODE: OpCode = OpCode::ConstantU8;
+
+    fn push(self, _pool: &mut ConstantPool) -> usize { 0 }
+    fn get(_index: usize, _pool: &ConstantPool) -> Result<((), usize), ConstantError> { Ok(((), 0)) }
 }
 
 pub struct Chunk {
@@ -110,14 +140,14 @@ impl Chunk {
         self.push_byte(op as u8, line);
     }
 
-    pub fn add_constant<T: Constant>(&mut self, constant: T) -> usize {
+    pub fn add_constant<'a, T: Constant<'a>>(&mut self, constant: T) -> usize {
         let index = self.constants.len();
         T::push(constant, &mut self.constants);
 
         index
     }
 
-    pub fn get_constant<T: Constant>(&self, index: usize) -> T {
+    pub fn get_constant<'a, T: Constant<'a>>(&self, index: usize) -> T {
         let (constant, _size) = T::get(index, &self.constants).unwrap();
         
         constant

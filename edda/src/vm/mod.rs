@@ -1,11 +1,15 @@
 mod chunk;
 mod debug;
 mod stack;
+mod compiler;
 
 use chunk::Chunk;
-use stack::{Stack, Value};
+use stack::Stack;
 
-pub type InterpretResult<T: Value> = Result<T, InterpretError>;
+pub use compiler::Compiler;
+pub use stack::Value;
+
+pub type InterpretResult<'a, T: Value<'a>> = Result<T, InterpretError>;
 
 #[derive(Debug)]
 pub enum InterpretError {
@@ -30,7 +34,7 @@ impl Vm {
         self.enable_tracing = true;
     }
 
-    pub fn interpret<T: Value>(&mut self, chunk: &Chunk) -> InterpretResult<T> {
+    pub fn interpret<'a, T: Value<'a>>(&mut self, chunk: &Chunk) -> InterpretResult<T> {
         use std::convert::TryInto;
         use chunk::OpCode;
 
@@ -62,6 +66,26 @@ impl Vm {
                     let constant = chunk.get_constant::<f64>(constant_index);
                     self.stack.push(constant)
                 },
+                OpCode::AddF64 => {
+                    let b = self.stack.pop::<f64>();
+                    let a = self.stack.pop::<f64>();
+                    self.stack.push::<f64>(a + b);
+                },
+                OpCode::SubstractF64 => {
+                    let b = self.stack.pop::<f64>();
+                    let a = self.stack.pop::<f64>();
+                    self.stack.push::<f64>(a - b);
+                },
+                OpCode::MultiplyF64 => {
+                    let b = self.stack.pop::<f64>();
+                    let a = self.stack.pop::<f64>();
+                    self.stack.push::<f64>(a * b);
+                },
+                OpCode::DivideF64 => {
+                    let b = self.stack.pop::<f64>();
+                    let a = self.stack.pop::<f64>();
+                    self.stack.push::<f64>(a / b);
+                },
                 OpCode::NegateF64 => {
                     let val = self.stack.pop::<f64>();
                     self.stack.push::<f64>(-val);
@@ -79,9 +103,16 @@ fn test_vm() {
     use chunk::OpCode;
 
     let mut chunk = Chunk::new();
-    let constant_index = chunk.add_constant(133.7);
+    let a = chunk.add_constant(133.7);
+    let b = chunk.add_constant(666f64);
     chunk.push_op(OpCode::ConstantF64, 1);
-    chunk.push_byte(constant_index as u8, 1);
+    chunk.push_byte(a as u8, 1);
+
+    chunk.push_op(OpCode::ConstantF64, 2);
+    chunk.push_byte(b as u8, 2);
+
+    chunk.push_op(OpCode::AddF64, 3);
+
     chunk.push_op(OpCode::NegateF64, 1);
     chunk.push_op(OpCode::Return, 1);
 

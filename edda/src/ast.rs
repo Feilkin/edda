@@ -2,6 +2,7 @@
 //! and stuff
 
 use std::fmt;
+use std::convert::TryFrom;
 
 use crate::token::Token;
 
@@ -21,6 +22,36 @@ impl fmt::Display for Literal {
             &Literal::Boolean(ref val) => write!(f, "{}", val),
             &Literal::Nil => write!(f, "nil"),
         }
+    }
+}
+
+impl<'a> TryFrom<&'a Literal> for f64 {
+    type Error = (); // TODO: error handling
+
+    fn try_from(lit: &Literal) -> Result<f64, Self::Error> {
+        match *lit {
+            Literal::Number(ref val) => Ok(*val),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Literal> for u8 {
+    type Error = (); // TODO: error handling
+
+    fn try_from(lit: &Literal) -> Result<u8, Self::Error> {
+        match *lit {
+            Literal::Number(ref val) => Ok(*val as u8),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Literal> for () {
+    type Error = ();
+
+    fn try_from(lit: &Literal) -> Result<(), Self::Error> {
+        Ok(()) // TODO: what is the correct behaviour here?
     }
 }
 

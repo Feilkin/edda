@@ -242,8 +242,51 @@ fn create_expression_node(
             ref operator,
             ref left,
             ref right,
-        } => (Vec::new(), Vec::new()),
-        &Expression::Grouping(ref expr) => (Vec::new(), Vec::new()),
+        } => {
+            let left_node_id = create_expression_node(left, nodes, links, cursor_x - 196.0, cursor_y - 64.0);
+            let right_node_id = create_expression_node(right, nodes, links, cursor_x - 196.0, cursor_y);
+
+            let left_link = Link {
+                input_index: left_node_id,
+                output_index: nodes.len(),
+                input_slot: 0,
+                output_slot: 0,
+            };
+
+
+            let right_link = Link {
+                input_index: right_node_id,
+                output_index: nodes.len(),
+                input_slot: 0,
+                output_slot: 1,
+            };
+
+            links.push(left_link);
+            links.push(right_link);
+
+            (
+                vec![InputType::Expression, InputType::Expression],
+                vec![OutputType::Expression],
+            )
+        },
+        &Expression::Grouping(ref expr) => {
+            let right_node_id = create_expression_node(expr, nodes, links, cursor_x - 196.0, cursor_y);
+
+
+            let child_link = Link {
+                input_index: right_node_id,
+                output_index: nodes.len(),
+                input_slot: 0,
+                output_slot: 0,
+            };
+
+            links.push(child_link);
+
+            (
+                vec![InputType::Expression],
+                vec![OutputType::Expression]
+            )
+        },
         &Expression::Variable(ref id) => (Vec::new(), vec![OutputType::Expression]),
     };
 
@@ -419,7 +462,7 @@ fn parse_statements(script: &str) -> Result<Vec<Statement>, String> {
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    let mut filename = "/examples/helloworld.edda";
+    let mut filename = "examples/helloworld.edda";
 
     if args.len() > 1 {
         filename = &args[1];
@@ -761,7 +804,10 @@ fn draw_expression_node_contents(ui: &Ui, expr: &Expression) -> () {
             ui.text(im_str!("Expression"));
         }
         &Expression::Unary { .. } => (),
-        &Expression::Binary { .. } => (),
+        &Expression::Binary { ref operator, ref left, ref right } => {
+            ui.text(im_str!("Binary {:?}", operator.ttype));
+            
+        },
         &Expression::Grouping(..) => (),
         &Expression::FunctionCall(ref callee, ref arguments) => match &**callee {
             Expression::Variable(id) => {
