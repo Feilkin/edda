@@ -9,6 +9,10 @@ use edda::parser::{parse_tokens, ParseError};
 use edda::scanner::{scan_tokens, ScanError};
 
 fn main() {
+    println!("hello, world! :)");
+}
+
+fn run_ast_walker() {
     let args: Vec<_> = env::args().collect();
     let mut filename = "../examples/helloworld.edda";
 

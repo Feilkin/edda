@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use interpreter::RuntimeError;
-use value::Value;
+use crate::interpreter::RuntimeError;
+use crate::value::Value;
 
 #[derive(Debug)]
 pub struct Environment {

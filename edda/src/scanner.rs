@@ -1,7 +1,7 @@
 //! Lexical Scanner
 //! Scans for lexes and stuff
 
-use token::{Token, TokenType, KEYWORDS};
+use crate::token::{Token, TokenType, KEYWORDS};
 
 #[derive(Debug)]
 pub struct ScanError {

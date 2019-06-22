@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use token::Token;
+use crate::token::Token;
 
 #[derive(Debug, Clone)]
 pub enum Literal {

@@ -419,7 +419,7 @@ fn parse_statements(script: &str) -> Result<Vec<Statement>, String> {
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    let mut filename = "../examples/helloworld.edda";
+    let mut filename = "/examples/helloworld.edda";
 
     if args.len() > 1 {
         filename = &args[1];

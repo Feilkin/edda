@@ -3,7 +3,7 @@
 use std::rc::Rc;
 use std::fmt;
 
-use ast::Expression;
+use crate::ast::Expression;
 
 #[derive(Debug, Clone)]
 pub enum Value {

@@ -1,1 +1,35 @@
 // TODO: figure this out
+
+// Host defines Drawable trait
+trait Drawable {
+    fn draw(&mut gfx);
+}
+
+// User implements it
+struct Player {
+    sprite: Sprite
+    position: Point2D
+}
+
+impl Drawable for Player {
+    fn draw(&mut gfx) -> {
+        gfx.draw(sprite, point);
+    }
+}
+
+// File loading?
+struct File(String);
+
+impl From<File> for Sprite {
+    fn from(file: File) -> Sprite {
+        // global?
+        let image_handle = (global AssetLoader).get(file);
+        // infer type for image_handle, ImageHandle, because Sprite::new() wants ImageHandle
+        Sprite::new(image_handle)
+    }
+}
+
+Player {
+    sprite: "assets/sprites/player.png"
+    position: (0, 0)
+}

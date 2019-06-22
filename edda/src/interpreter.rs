@@ -1,10 +1,10 @@
 //! Tree-walkin Interpreter for now
 
 use std::rc::Rc;
-use ast::{Expression, Literal, Statement};
-use environment::Environment;
-use token::TokenType;
-use value::{Value, Function, HostFunction};
+use crate::ast::{Expression, Literal, Statement};
+use crate::environment::Environment;
+use crate::token::TokenType;
+use crate::value::{Value, Function, HostFunction};
 
 #[derive(Debug)]
 pub struct RuntimeError(String);

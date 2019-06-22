@@ -13,8 +13,8 @@
 use std::iter::Peekable;
 use std::slice::Iter;
 
-use ast::{Expression, Literal, Statement};
-use token::{Token, TokenType};
+use crate::ast::{Expression, Literal, Statement};
+use crate::token::{Token, TokenType};
 
 #[derive(Debug)]
 pub struct ParseError {
