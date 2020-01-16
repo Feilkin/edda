@@ -16,21 +16,25 @@ macro_rules! match_tokens {
     (match ($offset:ident, $char:ident) $iter:ident {
         simple [$($s_type:path = $s_token:expr)*]
         double [$($d_type1:path, $d_type2:path = $d_token1:expr, $d_token2:expr)*]
+        $(ignore [$($ignr:expr)+])?
     }) => {
         match $char {
-            $($s_token => Ok(($s_type, 1)),)*
+            $($s_token => Ok(Some(($s_type, 1))),)*
             $($d_token1 => {
                 if let Some((_, next_char)) = $iter.peek() {
                     if next_char == &$d_token2 {
                         $iter.next();
-                        Ok(($d_type2, 2))
+                        Ok(Some(($d_type2, 2)))
                     } else {
-                        Ok(($d_type1, 1))
+                        Ok(Some(($d_type1, 1)))
                     }
                 } else {
-                    Ok(($d_type1, 1))
+                    Ok(Some(($d_type1, 1)))
                 }
             },)*
+            $(
+                $($ignr => Ok(None),)+
+            )?
             _ => Err(ScanError {
                 $offset,
                 $char
@@ -46,7 +50,7 @@ fn scan(source: &str) -> ScanResult {
 
     while let Some((offset, c)) = chars_and_offsets.next() {
         use TokenType::*;
-        let (t_type, length) = match_tokens! {
+        if let Some((t_type, length)) = match_tokens! {
             match (offset, c) chars_and_offsets {
                 simple [
                     LeftParen     = '('
@@ -63,14 +67,21 @@ fn scan(source: &str) -> ScanResult {
                     Star, StarEqual   = '*', '='
                     Equal, EqualEqual = '=', '='
                 ]
-            }
-        }?;
 
-        tokens.push(Token {
-            t_type,
-            offset,
-            text: &source[offset..offset + length],
-        })
+                ignore [
+                    ' '
+                    '\t'
+                    '\n'
+                    '\r'
+                ]
+            }
+        }? {
+            tokens.push(Token {
+                t_type,
+                offset,
+                text: &source[offset..offset + length],
+            })
+        }
     }
 
     Ok(tokens)
@@ -94,6 +105,25 @@ mod tests {
                 Token {
                     t_type: TokenType::RightParen,
                     offset: 1,
+                    text: ")"
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn test_skip_whitespace() {
+        assert_eq!(
+            scan("( )"),
+            Ok(vec![
+                Token {
+                    t_type: TokenType::LeftParen,
+                    offset: 0,
+                    text: "("
+                },
+                Token {
+                    t_type: TokenType::RightParen,
+                    offset: 2,
                     text: ")"
                 },
             ])
