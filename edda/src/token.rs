@@ -1,28 +1,15 @@
-//! Token type definition
+//! token definitions
 
-use std::collections::HashMap;
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Token {
-    pub ttype: TokenType,
-    pub start: usize,
-    pub end: usize,
+#[derive(Debug, Eq, PartialEq)]
+pub struct Token<'s> {
+    pub t_type: TokenType,
+    pub offset: usize,
+    pub text: &'s str,
 }
 
-impl Token {
-    pub fn dummy(ttype: TokenType) -> Token {
-        Token {
-            ttype,
-            start: 0,
-            end: 0,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum TokenType {
-    Number(f64),
-    String(String),
+    Number,
     LeftParen,
     RightParen,
     LeftBrace,
@@ -35,6 +22,7 @@ pub enum TokenType {
     Minus,
     Star,
     Slash,
+    LineComment,
     Caret,
     Bang,
     BangEqual,
@@ -50,7 +38,7 @@ pub enum TokenType {
     Greater,
     Arrow,
     FatArrow,
-    Identifier(String),
+    Identifier,
     Let,
     And,
     Or,
@@ -60,31 +48,7 @@ pub enum TokenType {
     Print,
     True,
     False,
-    Nil,
-    EoF,
-    Return,
-    Global,
     If,
     Else,
-}
-
-lazy_static! {
-    pub static ref KEYWORDS: HashMap<&'static str, TokenType> = {
-        let mut m = HashMap::new();
-        m.insert("let", TokenType::Let);
-        m.insert("and", TokenType::And);
-        m.insert("or", TokenType::Or);
-        m.insert("for", TokenType::For);
-        m.insert("in", TokenType::In);
-        m.insert("while", TokenType::While);
-        m.insert("true", TokenType::True);
-        m.insert("false", TokenType::False);
-        m.insert("nil", TokenType::Nil);
-        m.insert("print", TokenType::Print);
-        m.insert("return", TokenType::Return);
-        m.insert("global", TokenType::Global);
-        m.insert("if", TokenType::If);
-        m.insert("else", TokenType::Else);
-        m
-    };
+    Return,
 }

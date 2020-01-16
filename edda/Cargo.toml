@@ -3,12 +3,3 @@ name = "edda"
 version = "0.1.0"
 authors = ["Aatu Hieta <aatu@hieta.fi>"]
 edition = "2018"
-
-[features]
-default = ["ansi-colors"]
-ansi-colors = ["colored"]
-
-[dependencies]
-byteorder = "1.3"
-lazy_static = "*"
-colored = { version = "1.6", optional = true }
