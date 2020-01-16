@@ -7,7 +7,6 @@ pub mod ast;
 pub mod parser;
 pub mod scanner;
 pub mod token;
-pub mod value; // out of order
 pub mod vm;
 
 // TODO: move this somewhere else

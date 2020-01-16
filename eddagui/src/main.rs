@@ -15,7 +15,6 @@ use edda::ast::{Expression, Statement};
 use edda::parser::{parse_tokens, ParseError};
 use edda::scanner::{scan_tokens, ScanError};
 use edda::token::TokenType;
-use edda::value::{Value, HostFunction};
 
 struct CustomPrinter {
     output: String
