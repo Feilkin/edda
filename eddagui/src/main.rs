@@ -14,7 +14,6 @@ use imgui::*;
 use edda::ast::{Expression, Statement};
 use edda::parser::{parse_tokens, ParseError};
 use edda::scanner::{scan_tokens, ScanError};
-use edda::interpreter::{Interpreter, RuntimeError, Printer};
 use edda::token::TokenType;
 use edda::value::{Value, HostFunction};
 
@@ -541,21 +540,7 @@ fn main() {
                 }
                 ui.same_line(0.0);
                 if ui.button(im_str!("Run"), (0.0, 0.0)) {
-                    let mut interpreter = Interpreter::new_with_printer(CustomPrinter::new());
-                    interpreter.environment.define_local("host_print", Value::HostFunction(
-                        Rc::new(HostFunction::new(|args| {
-                                println!("host_print: {}", args[0]);
-                                Value::Nil
-                            }, 1)
-                        ))).unwrap();
-                    match interpreter.interpret(&statements) {
-                        Ok(_) => {
-                            state.pending_output = Some(interpreter.printer.output);
-                        },
-                        Err(runtime_error) => {
-                            state.pending_output = Some(format!("{:?}", runtime_error));
-                        }
-                    }
+                    // TODO: run code
                 }
             });
 
