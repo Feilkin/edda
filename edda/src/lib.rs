@@ -4,3 +4,6 @@
 
 mod scanner;
 mod token;
+
+// exports
+pub use scanner::scan;
