@@ -12,58 +12,61 @@ pub struct ScanError {
 }
 
 macro_rules! trie {
-    // leaf
-    (@value $source:expr, $t_type:path) => {{
-        // TODO: advance the source iterator by val length
-        Some($t_type)
-    }};
-
-    // branch
-    (@value: $source:expr, [
-        $($inner_key:literal => $value:tt,)+
-    ]) => {{
-        // advance the source iterator
-        let val = val.next();
-        match val {
-            $(val @ $key => trie!(@inner $source, $value))+
-            _ => None
-        }
-    }};
-
-    (@key $source:expr, $key:literal,) => {
-        $key
+    // single key
+    (@key $source:expr, $val:expr, $key:literal,) => {
+        $val == $key
     };
 
-    // parse keys
-    (@key $source:expr, $first:literal, $second:literal, $($rest:literal,)*) => {
-        $first if match $source.peek() {
-            Some(c) if c == $second => {
-                let source = $source.clone(); // prevent mutation
-                source.next(); // advance the source iterator
-
-                match source.peek() {
-                    trie!(@key source, $($rest:literal,)*) => { true },
-                    _ => { false }
-                }
-            },
-            _ => false
+    // list of keys
+    (@key $source:expr, $val:expr, $first:literal, $($tail:literal,)+) => {
+        trie!(@key $source, $val, $first,) && {
+            let next = $source.next();
+            match next {
+                Some((_, c)) => trie!(@key $source, c, $($tail,)+),
+                None => false,
+            }
         }
     };
 
-    // Entry point
-    ($source:expr, $val:expr, [
-        $([$($keys:literal)+] => $value:tt,)+
+    // branch value
+    (@value $source:ident, [$($rules:tt)+]) => {
+        match match $source.next() {
+            Some((_, c)) => trie!($source, c, [$($rules)+]),
+            None => None
+        } {
+            Some(value) => Some((value, $source)),
+            None => None,
+        }
+    };
+
+    // leaf value
+    (@value $source:ident, $value:expr) => {
+        Some(($value, $source))
+    };
+
+    // Entry point with branch
+    ($source:ident, $val:expr, [
+        $($keys:literal)+ => $value:tt,
+        $($tail:tt)*
     ]) => {{
-        // clone the original iterator
-        let source = $source.clone();
-
-        match $val {
-            $(trie!(@key source, $($keys,)+) => trie!(@value source, $value),)+
-
-            // TODO: identifiers
-            _ => None
+        let mut source = $source.clone(); // prevent mutation
+        if trie!(@key source, $val, $($keys,)*) {
+            match trie!(@value source, $value) {
+                Some((value, source)) => {
+                    $source = source;
+                    Some(value)
+                },
+                None => None
+            }
+        } else {
+            trie!($source, $val, [$($tail)*])
         }
     }};
+
+    // exit
+    ($source:expr, $val:expr, []) => {
+        None
+    }
 }
 
 macro_rules! match_tokens {
@@ -90,9 +93,12 @@ macro_rules! match_tokens {
                 }
             },)*
 
-            val @ $($trie_root => match trie!($iter, val, $trie_args) {
+            $(val @ $trie_root => match trie!($iter, val, $trie_args) {
                 Some((t_type, len)) => Ok(Some((t_type, len))),
-                None => panic!("syntax error")
+                None => Err(ScanError {
+                    $offset,
+                    c: val
+                })
             },)*
 
             $(
@@ -128,25 +134,24 @@ pub fn scan(source: &str) -> ScanResult {
                     Bang, BangEqual   = '!', '='
                     Plus, PlusEqual   = '+', '='
                     Star, StarEqual   = '*', '='
-                    Equal, EqualEqual = '=', '='
                 ]
 
                 trie [
                     'a'..='z' => [
-                        ['a' 'n' 'd'] => And,
-//                        "else" => Else,
-//                        "f" => [
-//                            // TODO: functions
-//                            "or" => For,
-//                            "alse" => False,
-//                        ],
-//                        "i" => [
-//                            "f" => If,
-//                            "n" => In,
-//                        ],
-//                        "or" => Or,
-//                        "print" => Print,
-//                        "true" => True,
+                        'a' 'n' 'd' => (And, 3),
+                        'e' 'l' 's' 'e' => (Else, 4),
+                        'f' => [
+                            // TODO: functions
+                            'o' 'r' => (For, 3),
+                            'a' 'l' 's' 'e' => (False, 5),
+                        ],
+                        'i' => [
+                            'f' => (If, 2),
+                            'n' => (In, 2),
+                        ],
+                        'o' 'r' => (Or, 2),
+                        'p' 'r' 'i' 'n' 't' => (Print, 5),
+                        't' 'r' 'u' 'e' => (True, 4),
                     ]
                 ]
 
@@ -210,5 +215,38 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn test_keyword() {
+        assert_eq!(
+            scan("and"),
+            Ok(vec![
+                Token {
+                    t_type: TokenType::And,
+                    offset: 0,
+                    text: "and"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_nested_trie_keyword() {
+        assert_eq!(
+            scan("false for"),
+            Ok(vec![
+                Token {
+                    t_type: TokenType::False,
+                    offset: 0,
+                    text: "false"
+                },
+                Token {
+                    t_type: TokenType::For,
+                    offset: 6,
+                    text: "for"
+                },
+            ])
+        )
     }
 }
