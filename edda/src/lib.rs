@@ -4,6 +4,7 @@
 
 mod scanner;
 mod token;
+mod parser;
 
 // exports
 pub use scanner::scan;

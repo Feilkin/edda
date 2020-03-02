@@ -249,7 +249,7 @@ pub fn scan(source: &str) -> ScanResult {
                         'p' 'r' 'i' 'n' 't' => (Print, 5),
                         't' 'r' 'u' 'e' => (True, 4),
                     ]
-                ] -> (|c, source: &mut Peekable<CharIndices>| {
+                ] -> (|_c, source: &mut Peekable<CharIndices>| {
                     // TODO: make identifier here
                     let mut len = 1;
 
@@ -276,11 +276,11 @@ pub fn scan(source: &str) -> ScanResult {
                             '>' => (FatArrow, 2),
                         ],
                     ]
-                ] -> (|c, _source| {
+                ] -> (|_c, _source| {
                     Some((Equal, 1))
                 });
 
-                custom '0' ..= '9' => (c, source) {
+                custom '0' ..= '9' => (_c, source) {
                     let mut len = 1;
 
                     while match source.peek() {
