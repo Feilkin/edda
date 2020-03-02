@@ -9,7 +9,8 @@ pub struct Token<'s> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum TokenType {
-    Number,
+    Integer,
+    Float,
     LeftParen,
     RightParen,
     LeftBrace,
