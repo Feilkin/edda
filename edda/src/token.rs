@@ -1,6 +1,6 @@
 //! token definitions
 
-use std::fmt::{Display, Formatter, Error};
+use std::fmt::{Display, Error, Formatter};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Token<'s> {

@@ -1,9 +1,10 @@
 //! Syntax tree nodes
 
+use crate::ast::expressions::Binary;
 use crate::parser::{semicolon, Parsable, ParseResult};
 use crate::token::Token;
-use std::fmt::{Display, Error, Formatter, Debug};
-use crate::ast::expressions::Binary;
+use std::any::Any;
+use std::fmt::{Debug, Display, Error, Formatter};
 
 mod expressions;
 

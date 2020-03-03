@@ -3,8 +3,16 @@
 use crate::ast::Expression;
 use crate::parser::{Parsable, ParseResult};
 use crate::token::{Token, TokenType};
-use std::fmt::{Display, Formatter, Error};
+use std::fmt::{Display, Error, Formatter};
 
+/// Entry point for expression parsing
+pub fn expression<'a, 's>(
+    tokens: &'a [Token<'s>],
+) -> ParseResult<'s, 'a, Box<dyn Expression + 's>> {
+    Addition::try_parse(tokens).and_then(|(expr, tail)| Ok((expr as Box<dyn Expression>, tail)))
+}
+
+// Binary expressions
 #[derive(Debug)]
 pub struct Binary<'s> {
     pub lhs: Box<dyn Expression + 's>,
@@ -18,36 +26,80 @@ impl<'s> Display for Binary<'s> {
     }
 }
 
-impl<'s> Expression for Binary<'s> {}
+#[derive(Debug)]
+pub struct Addition<'s>(Binary<'s>);
 
-// TODO: very very hack
-impl<'s> PartialEq for Binary<'s> {
-    fn eq(&self, other: &Self) -> bool {
-        if self.operator != other.operator { return false; }
-        if format!("{}", self) != format!("{}", other) { return false; }
-        true
+impl<'s> Display for Addition<'s> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.0)
     }
 }
 
-impl<'s> Parsable<'s> for Binary<'s> {
-    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self> {
-        let (lhs, tail) = Literal::try_parse(tokens)?;
+impl<'s> Parsable<'s> for Addition<'s> {
+    type Node = Box<dyn Expression + 's>;
 
-        let (operator, tail) = match_tokens!(
-            tail,
-            TokenType::Plus,
-            TokenType::Minus,
-            TokenType::Star,
-            TokenType::Slash
-        )?;
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (mut expr, mut tail) = Multiplication::try_parse(tokens)
+            .and_then(|(expr, tail)| Ok((expr as Box<dyn Expression>, tail)))?;
 
-        let (rhs, tail) = Literal::try_parse(tail)?;
+        while peek_tokens!(tail, TokenType::Plus, TokenType::Minus) {
+            let (first, new_tail) = tail.split_at(1);
+            let operator = first[0].clone();
+            let (rhs, new_tail) = Multiplication::try_parse(new_tail)?;
 
-        Ok((Box::new(Binary { lhs, operator, rhs }), tail))
+            expr = Box::new(Addition(Binary {
+                lhs: expr,
+                operator,
+                rhs,
+            }));
+
+            tail = new_tail;
+        }
+
+        Ok((expr, tail))
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+impl<'s> Expression for Addition<'s> {}
+
+#[derive(Debug)]
+pub struct Multiplication<'s>(Binary<'s>);
+
+impl<'s> Display for Multiplication<'s> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl<'s> Parsable<'s> for Multiplication<'s> {
+    type Node = Box<dyn Expression + 's>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (mut expr, mut tail): (Box<dyn Expression>, _) = Literal::try_parse(tokens)?;
+
+        while peek_tokens!(tail, TokenType::Star, TokenType::Slash) {
+            let (first, new_tail) = tail.split_at(1);
+            let operator = first[0].clone();
+            let (rhs, new_tail) = Literal::try_parse(new_tail)?;
+
+            expr = Box::new(Multiplication(Binary {
+                lhs: expr,
+                operator,
+                rhs,
+            }));
+
+            tail = new_tail;
+        }
+
+        Ok((expr, tail))
+    }
+}
+
+impl<'s> Expression for Multiplication<'s> {}
+
+// Primaries
+
+#[derive(Debug)]
 pub struct Literal<'s>(Token<'s>);
 
 impl<'s> Display for Literal<'s> {
@@ -59,7 +111,9 @@ impl<'s> Display for Literal<'s> {
 impl<'s> Expression for Literal<'s> {}
 
 impl<'s> Parsable<'s> for Literal<'s> {
-    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self> {
+    type Node = Box<dyn Expression + 's>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
         let (value, tail) = match_tokens!(tokens, TokenType::Integer)?;
         Ok((Box::new(Literal(value)), tail))
     }
@@ -67,7 +121,9 @@ impl<'s> Parsable<'s> for Literal<'s> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ast::expressions::expression;
     use crate::ast::expressions::*;
+    use crate::ast::Expression;
     use crate::parser::Parsable;
     use crate::scan;
     use crate::token::{Token, TokenType};
@@ -78,16 +134,24 @@ mod tests {
         let empty_tail: &[Token] = &[Token {
             t_type: TokenType::Eof,
             offset: 4,
-            text: ""
+            text: "",
         }];
 
+        let expected = Ok((
+            format!(
+                "{}",
+                Box::new(Literal(Token {
+                    t_type: TokenType::Integer,
+                    offset: 0,
+                    text: "1337"
+                }))
+            ),
+            empty_tail,
+        ));
+
         assert_eq!(
-            Literal::try_parse(&tokens),
-            Ok((Box::new(Literal(Token {
-                t_type: TokenType::Integer,
-                offset: 0,
-                text: "1337"
-            })), empty_tail))
+            expression(&tokens).and_then(|(ast, tail)| Ok((format!("{}", ast), tail))),
+            expected
         )
     }
 
@@ -97,28 +161,75 @@ mod tests {
         let empty_tail: &[Token] = &[Token {
             t_type: TokenType::Eof,
             offset: 5,
-            text: ""
+            text: "",
         }];
 
-        assert_eq!(
-            Binary::try_parse(&tokens),
-            Ok((Box::new(Binary {
-                lhs: Box::new(Literal(Token {
-                    t_type: TokenType::Integer,
-                    offset: 0,
-                    text: "1"
-                })),
-                operator: Token {
-                    t_type: TokenType::Plus,
-                    offset: 2,
-                    text: "+"
-                },
-                rhs: Box::new(Literal(Token {
-                    t_type: TokenType::Integer,
-                    offset: 4,
-                    text: "2"
+        let expected = Ok((
+            format!(
+                "{}",
+                Box::new(Addition(Binary {
+                    lhs: Box::new(Literal(Token {
+                        t_type: TokenType::Integer,
+                        offset: 0,
+                        text: "1"
+                    })),
+                    operator: Token {
+                        t_type: TokenType::Plus,
+                        offset: 2,
+                        text: "+"
+                    },
+                    rhs: Box::new(Literal(Token {
+                        t_type: TokenType::Integer,
+                        offset: 4,
+                        text: "2"
+                    }))
                 }))
-            }), empty_tail))
+            ),
+            empty_tail,
+        ));
+
+        assert_eq!(
+            expression(&tokens).and_then(|(ast, tail)| Ok((format!("{}", ast), tail))),
+            expected
+        )
+    }
+
+    #[test]
+    fn test_binary_multiply() {
+        let tokens = scan("1 * 2").unwrap();
+        let empty_tail: &[Token] = &[Token {
+            t_type: TokenType::Eof,
+            offset: 5,
+            text: "",
+        }];
+
+        let expected = Ok((
+            format!(
+                "{}",
+                Box::new(Multiplication(Binary {
+                    lhs: Box::new(Literal(Token {
+                        t_type: TokenType::Integer,
+                        offset: 0,
+                        text: "1"
+                    })),
+                    operator: Token {
+                        t_type: TokenType::Plus,
+                        offset: 2,
+                        text: "*"
+                    },
+                    rhs: Box::new(Literal(Token {
+                        t_type: TokenType::Integer,
+                        offset: 4,
+                        text: "2"
+                    }))
+                }))
+            ),
+            empty_tail,
+        ));
+
+        assert_eq!(
+            expression(&tokens).and_then(|(ast, tail)| Ok((format!("{}", ast), tail))),
+            expected
         )
     }
 }

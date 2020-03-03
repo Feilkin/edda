@@ -8,7 +8,7 @@ pub struct ParseError<'s> {
     pub expected: Vec<TokenType>,
 }
 
-pub type ParseResult<'s, 'a, R> = Result<(Box<R>, &'a [Token<'s>]), Vec<ParseError<'s>>>;
+pub type ParseResult<'s, 'a, R> = Result<(R, &'a [Token<'s>]), Vec<ParseError<'s>>>;
 
 impl<'s> From<ParseError<'s>> for Vec<ParseError<'s>> {
     fn from(err: ParseError<'s>) -> Self {
@@ -18,7 +18,9 @@ impl<'s> From<ParseError<'s>> for Vec<ParseError<'s>> {
 
 // Parsa :-DD
 pub trait Parsable<'s> {
-    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self>;
+    type Node;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node>;
 }
 
 macro_rules! match_tokens {
@@ -34,6 +36,20 @@ macro_rules! match_tokens {
                 token: unexpected.clone(),
                 expected: vec![$($valid,)+]
             }),
+        }
+    };
+}
+
+macro_rules! peek_tokens {
+    ($token_stream:ident, $($valid:path),+) => {
+        // It's OK to unwrap here, because we should always catch EOF
+        // before tokens run out
+        match $token_stream.first().unwrap() {
+            $(Token {
+                t_type: $valid,
+                ..
+            })|+ => true,
+            _ => false,
         }
     };
 }
