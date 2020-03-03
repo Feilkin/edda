@@ -2,9 +2,12 @@
 //!
 //! use at your own risk
 
+#[macro_use]
+mod parser;
+
+mod ast;
 mod scanner;
 mod token;
-mod parser;
 
 // exports
 pub use scanner::scan;

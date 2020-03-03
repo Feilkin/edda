@@ -313,6 +313,12 @@ pub fn scan(source: &str) -> ScanResult {
         }
     }
 
+    tokens.push(Token {
+        t_type: TokenType::Eof,
+        offset: source.len(),
+        text: "",
+    });
+
     Ok(tokens)
 }
 
@@ -363,13 +369,11 @@ mod tests {
     fn test_keyword() {
         assert_eq!(
             scan("and"),
-            Ok(vec![
-                Token {
-                    t_type: TokenType::And,
-                    offset: 0,
-                    text: "and"
-                }
-            ])
+            Ok(vec![Token {
+                t_type: TokenType::And,
+                offset: 0,
+                text: "and"
+            }])
         );
     }
 

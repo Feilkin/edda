@@ -1,13 +1,21 @@
 //! token definitions
 
-#[derive(Debug, Eq, PartialEq)]
+use std::fmt::{Display, Formatter, Error};
+
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Token<'s> {
     pub t_type: TokenType,
     pub offset: usize,
     pub text: &'s str,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+impl<'s> Display for Token<'s> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.text)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum TokenType {
     Integer,
     Float,
@@ -52,4 +60,5 @@ pub enum TokenType {
     If,
     Else,
     Return,
+    Eof,
 }
