@@ -1,57 +1,65 @@
 //! AST nodes that evaluate to values.
 
-use crate::ast::Expression;
-use crate::parser::{Parsable, ParseResult};
-use crate::token::{Token, TokenType};
 use std::fmt::{Display, Error, Formatter};
 
+use crate::parser::{Parsable, ParseError, ParseResult};
+use crate::token::{Token, TokenType};
+
 /// Entry point for expression parsing
-pub fn expression<'a, 's>(
-    tokens: &'a [Token<'s>],
-) -> ParseResult<'s, 'a, Box<dyn Expression + 's>> {
-    Addition::try_parse(tokens).and_then(|(expr, tail)| Ok((expr as Box<dyn Expression>, tail)))
+#[derive(Debug, Eq, PartialEq)]
+pub enum Expression<'s> {
+    Addition(Addition<'s>),
+    Multiplication(Multiplication<'s>),
+    Literal(Literal<'s>),
 }
 
-// Binary expressions
-#[derive(Debug)]
-pub struct Binary<'s> {
-    pub lhs: Box<dyn Expression + 's>,
-    pub operator: Token<'s>,
-    pub rhs: Box<dyn Expression + 's>,
-}
+impl<'s> Parsable<'s> for Expression<'s> {
+    type Node = Expression<'s>;
 
-impl<'s> Display for Binary<'s> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{} {} {}", self.lhs, self.operator, self.rhs)
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        Addition::try_parse(tokens)
     }
 }
 
-#[derive(Debug)]
+// Binary expressions
+#[derive(Debug, Eq, PartialEq)]
+pub struct Binary<'s> {
+    pub lhs: Box<Expression<'s>>,
+    pub operator: Token<'s>,
+    pub rhs: Box<Expression<'s>>,
+}
+
+impl<'s> Binary<'s> {
+    pub fn new(lhs: Expression<'s>, operator: Token<'s>, rhs: Expression<'s>) -> Binary<'s> {
+        Binary {
+            lhs: Box::new(lhs),
+            operator,
+            rhs: Box::new(rhs),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct Addition<'s>(Binary<'s>);
 
-impl<'s> Display for Addition<'s> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.0)
+impl<'s> From<Addition<'s>> for Expression<'s> {
+    fn from(expr: Addition<'s>) -> Self {
+        Expression::Addition(expr)
     }
 }
 
 impl<'s> Parsable<'s> for Addition<'s> {
-    type Node = Box<dyn Expression + 's>;
+    type Node = Expression<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        let (mut expr, mut tail) = Multiplication::try_parse(tokens)
-            .and_then(|(expr, tail)| Ok((expr as Box<dyn Expression>, tail)))?;
+        let (mut expr, mut tail) = Multiplication::try_parse(tokens)?;
 
         while peek_tokens!(tail, TokenType::Plus, TokenType::Minus) {
-            let (first, new_tail) = tail.split_at(1);
-            let operator = first[0].clone();
+            let (first, new_tail) = tail.split_first().expect("ran out of tokens while parsing");
+            let operator = first.clone();
             let (rhs, new_tail) = Multiplication::try_parse(new_tail)?;
 
-            expr = Box::new(Addition(Binary {
-                lhs: expr,
-                operator,
-                rhs,
-            }));
+            expr = Addition(Binary::new(expr, operator, rhs)).into();
 
             tail = new_tail;
         }
@@ -60,33 +68,27 @@ impl<'s> Parsable<'s> for Addition<'s> {
     }
 }
 
-impl<'s> Expression for Addition<'s> {}
-
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Multiplication<'s>(Binary<'s>);
 
-impl<'s> Display for Multiplication<'s> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.0)
+impl<'s> From<Multiplication<'s>> for Expression<'s> {
+    fn from(expr: Multiplication<'s>) -> Self {
+        Expression::Multiplication(expr)
     }
 }
 
 impl<'s> Parsable<'s> for Multiplication<'s> {
-    type Node = Box<dyn Expression + 's>;
+    type Node = Expression<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        let (mut expr, mut tail): (Box<dyn Expression>, _) = Literal::try_parse(tokens)?;
+        let (mut expr, mut tail) = Literal::try_parse(tokens)?;
 
         while peek_tokens!(tail, TokenType::Star, TokenType::Slash) {
-            let (first, new_tail) = tail.split_at(1);
-            let operator = first[0].clone();
+            let (first, new_tail) = tail.split_first().expect("ran out of tokens when parsing");
+            let operator = first.clone();
             let (rhs, new_tail) = Literal::try_parse(new_tail)?;
 
-            expr = Box::new(Multiplication(Binary {
-                lhs: expr,
-                operator,
-                rhs,
-            }));
+            expr = Multiplication(Binary::new(expr, operator, rhs)).into();
 
             tail = new_tail;
         }
@@ -95,35 +97,29 @@ impl<'s> Parsable<'s> for Multiplication<'s> {
     }
 }
 
-impl<'s> Expression for Multiplication<'s> {}
-
 // Primaries
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Literal<'s>(Token<'s>);
 
-impl<'s> Display for Literal<'s> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.0)
+impl<'s> From<Literal<'s>> for Expression<'s> {
+    fn from(expr: Literal<'s>) -> Self {
+        Expression::Literal(expr)
     }
 }
 
-impl<'s> Expression for Literal<'s> {}
-
 impl<'s> Parsable<'s> for Literal<'s> {
-    type Node = Box<dyn Expression + 's>;
+    type Node = Expression<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
         let (value, tail) = match_tokens!(tokens, TokenType::Integer)?;
-        Ok((Box::new(Literal(value)), tail))
+        Ok((Literal(value).into(), tail))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::expressions::expression;
     use crate::ast::expressions::*;
-    use crate::ast::Expression;
     use crate::parser::Parsable;
     use crate::scan;
     use crate::token::{Token, TokenType};
@@ -138,21 +134,16 @@ mod tests {
         }];
 
         let expected = Ok((
-            format!(
-                "{}",
-                Box::new(Literal(Token {
-                    t_type: TokenType::Integer,
-                    offset: 0,
-                    text: "1337"
-                }))
-            ),
+            Literal(Token {
+                t_type: TokenType::Integer,
+                offset: 0,
+                text: "1337",
+            })
+            .into(),
             empty_tail,
         ));
 
-        assert_eq!(
-            expression(&tokens).and_then(|(ast, tail)| Ok((format!("{}", ast), tail))),
-            expected
-        )
+        assert_eq!(Expression::try_parse(&tokens), expected)
     }
 
     #[test]
@@ -165,33 +156,29 @@ mod tests {
         }];
 
         let expected = Ok((
-            format!(
-                "{}",
-                Box::new(Addition(Binary {
-                    lhs: Box::new(Literal(Token {
-                        t_type: TokenType::Integer,
-                        offset: 0,
-                        text: "1"
-                    })),
-                    operator: Token {
-                        t_type: TokenType::Plus,
-                        offset: 2,
-                        text: "+"
-                    },
-                    rhs: Box::new(Literal(Token {
-                        t_type: TokenType::Integer,
-                        offset: 4,
-                        text: "2"
-                    }))
-                }))
-            ),
+            Expression::Addition(Addition(Binary::new(
+                Literal(Token {
+                    t_type: TokenType::Integer,
+                    offset: 0,
+                    text: "1",
+                })
+                .into(),
+                Token {
+                    t_type: TokenType::Plus,
+                    offset: 2,
+                    text: "+",
+                },
+                Literal(Token {
+                    t_type: TokenType::Integer,
+                    offset: 4,
+                    text: "2",
+                })
+                .into(),
+            ))),
             empty_tail,
         ));
 
-        assert_eq!(
-            expression(&tokens).and_then(|(ast, tail)| Ok((format!("{}", ast), tail))),
-            expected
-        )
+        assert_eq!(Expression::try_parse(&tokens), expected)
     }
 
     #[test]
@@ -204,32 +191,28 @@ mod tests {
         }];
 
         let expected = Ok((
-            format!(
-                "{}",
-                Box::new(Multiplication(Binary {
-                    lhs: Box::new(Literal(Token {
-                        t_type: TokenType::Integer,
-                        offset: 0,
-                        text: "1"
-                    })),
-                    operator: Token {
-                        t_type: TokenType::Plus,
-                        offset: 2,
-                        text: "*"
-                    },
-                    rhs: Box::new(Literal(Token {
-                        t_type: TokenType::Integer,
-                        offset: 4,
-                        text: "2"
-                    }))
-                }))
-            ),
+            Expression::Multiplication(Multiplication(Binary::new(
+                Literal(Token {
+                    t_type: TokenType::Integer,
+                    offset: 0,
+                    text: "1",
+                })
+                .into(),
+                Token {
+                    t_type: TokenType::Star,
+                    offset: 2,
+                    text: "*",
+                },
+                Literal(Token {
+                    t_type: TokenType::Integer,
+                    offset: 4,
+                    text: "2",
+                })
+                .into(),
+            ))),
             empty_tail,
         ));
 
-        assert_eq!(
-            expression(&tokens).and_then(|(ast, tail)| Ok((format!("{}", ast), tail))),
-            expected
-        )
+        assert_eq!(Expression::try_parse(&tokens), expected)
     }
 }

@@ -9,5 +9,4 @@ use std::fmt::{Debug, Display, Error, Formatter};
 mod expressions;
 
 // TODO: do we actually need these?
-pub trait Expression: Debug + Display {}
 pub trait Statement: Debug + Display {}
