@@ -235,10 +235,12 @@ pub fn scan(source: &str) -> ScanResult {
                 ]
 
                 double [
-                    Dot, DotDot       = '.', '.'
-                    Bang, BangEqual   = '!', '='
-                    Plus, PlusEqual   = '+', '='
-                    Star, StarEqual   = '*', '='
+                    Dot, DotDot           = '.', '.'
+                    Bang, BangEqual       = '!', '='
+                    Plus, PlusEqual       = '+', '='
+                    Star, StarEqual       = '*', '='
+                    Less, LessEqual       = '<', '='
+                    Greater, GreaterEqual = '>', '='
                 ]
 
                 trie_or [

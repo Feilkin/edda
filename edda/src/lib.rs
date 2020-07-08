@@ -8,6 +8,7 @@ pub mod parser;
 mod ast;
 mod scanner;
 mod token;
+mod typer;
 mod vm;
 
 // exports

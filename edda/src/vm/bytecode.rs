@@ -19,6 +19,18 @@ pub enum OpCode {
     MulI32 = 0x32,
     /// Divide first i32 by second i32 from stack
     DivI32 = 0x33,
+    /// Pop B, A from stack and push bool A < B to stack
+    LessI32 = 0x34,
+    /// Pop B, A from stack and push bool A <= B to stack
+    LessEqualI32 = 0x35,
+    /// Pop B, A from stack and push bool A == B to stack
+    EqualI32 = 0x36,
+    /// Unconditional relative jump to 16bit offset
+    Jump = 0x50,
+    /// Unconditional relative jump backwards
+    Jumb = 0x51,
+    /// Conditional relative jump to 16bit offset
+    JumpIfFalse = 0x52,
 }
 
 pub struct Chunk {
@@ -43,10 +55,20 @@ impl Debug for Chunk {
                 | OpCode::AddI32
                 | OpCode::SubI32
                 | OpCode::MulI32
-                | OpCode::DivI32 => (),
+                | OpCode::DivI32
+                | OpCode::LessEqualI32
+                | OpCode::LessI32
+                | OpCode::EqualI32 => (),
                 OpCode::ConstantI32 => {
                     let arg = i32::from_le_bytes(self.code[ptr..ptr + 4].try_into().unwrap());
                     ptr += 4;
+
+                    writeln!(f, " ]")?;
+                    write!(f, "[      : {:>20}", arg)?;
+                }
+                OpCode::JumpIfFalse | OpCode::Jump | OpCode::Jumb => {
+                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
+                    ptr += 2;
 
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
@@ -71,5 +93,19 @@ impl Chunk {
 
     pub fn push_value<T: AsRef<[u8]>>(&mut self, value: T) {
         self.code.extend_from_slice(value.as_ref());
+    }
+
+    pub fn set_value<T: AsRef<[u8]>>(&mut self, value: T, offset: usize) {
+        self.code[offset..offset + value.as_ref().len()].copy_from_slice(value.as_ref());
+    }
+
+    /// Returns next offset
+    pub fn head(&self) -> usize {
+        self.code.len()
+    }
+
+    /// Returns next offset as u16
+    pub fn head_short(&self) -> u16 {
+        self.head() as u16
     }
 }

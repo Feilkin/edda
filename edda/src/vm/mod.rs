@@ -67,7 +67,37 @@ impl Vm {
                 let val = lhs / rhs;
                 self.push_bytes(&val.to_le_bytes()).unwrap();
             }
-            _ => unimplemented!(),
+            OpCode::Jump => {
+                let offset = self.chunk_short();
+                self.ip += offset as usize - 2;
+            }
+            OpCode::Jumb => {
+                let offset = self.chunk_short();
+                self.ip -= offset as usize + 2;
+            }
+            OpCode::JumpIfFalse => {
+                let offset = self.chunk_short();
+                let cond = self.pop_bytes(1).unwrap();
+
+                if cond[0] == 0 {
+                    self.ip += offset as usize - 2;
+                }
+            }
+            OpCode::LessI32 => {
+                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                let val = lhs < rhs;
+                self.push_bytes(&[val as u8]).unwrap();
+            }
+            OpCode::LessEqualI32 => {
+                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                let val = lhs <= rhs;
+                self.push_bytes(&[val as u8]).unwrap();
+            }
+            OpCode::EqualI32 => {
+                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                let val = lhs == rhs;
+                self.push_bytes(&[val as u8]).unwrap();
+            }
         }
 
         VmState::Running(self)
@@ -81,22 +111,24 @@ impl Debug for Vm {
         // TODO: Stack printing is only possible when exact type of all variables inside stack are
         //       known. For now, we only support i32 so it shouldn't be a problem :) gl future me
 
-        let mut stack = Vec::new();
-
-        for i in (self.sp + 1..SCRIPT_MEMORY - 1).step_by(4) {
-            let val = i32::from_le_bytes(self.mem[i..i + 4].try_into().unwrap());
-            stack.push(val);
-        }
-
-        let stack_repr = stack
-            .iter()
-            .rev()
-            .fold(String::new(), |a, b| format!("{} {}", a, b));
+        //        let mut stack = Vec::new();
+        //
+        //        for i in (self.sp + 1..SCRIPT_MEMORY - 1).step_by(4) {
+        //            let val = i32::from_le_bytes(self.mem[i..i + 4].try_into().unwrap());
+        //            stack.push(val);
+        //        }
+        //
+        //        let stack_repr = stack
+        //            .iter()
+        //            .rev()
+        //            .fold(String::new(), |a, b| format!("{} {}", a, b));
 
         write!(
             f,
-            "Vm {{ ip: {}, sp: {}, current op: {:?}, stack: [{} ] }}",
-            self.ip, self.sp, op, stack_repr
+            "Vm {{ ip: {}, sp: {}, current op: {:?} }}",
+            self.ip,
+            self.sp,
+            op, //stack_repr
         )
     }
 }
@@ -153,6 +185,11 @@ impl Vm {
         Ok((a, b))
     }
 
+    fn pop_u8(&mut self) -> Result<u8, OutOfMemory> {
+        let val = u8::from_le_bytes(self.pop_bytes(1)?.try_into().unwrap());
+        Ok(val)
+    }
+
     fn load_bytes(&mut self, len: usize) -> Result<(), OutOfMemory> {
         let sp = self.sp;
 
@@ -171,5 +208,11 @@ impl Vm {
         self.sp = sp - len;
 
         Ok(())
+    }
+
+    fn chunk_short(&mut self) -> u16 {
+        let val = u16::from_le_bytes(self.chunk.code[self.ip..self.ip + 2].try_into().unwrap());
+        self.ip += 2;
+        val
     }
 }
