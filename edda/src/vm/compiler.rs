@@ -2,8 +2,8 @@
 
 use thiserror::Error as ThisError;
 
+use crate::ast::expressions::{Addition, Binary, Expression, Grouping};
 use crate::token::TokenType;
-use crate::ast::expressions::{Expression, Addition, Binary};
 use crate::vm::bytecode::{Chunk, OpCode};
 use crate::Error;
 
@@ -28,20 +28,16 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
             chunk.push_value(val.to_le_bytes());
 
             Ok(chunk)
-        },
+        }
         Expression::Addition(expr) => {
-            let Binary {
-                lhs,
-                operator,
-                rhs,
-            } = expr.0;
+            let Binary { lhs, operator, rhs } = expr.0;
 
             chunk = compile(*lhs, chunk)?;
             chunk = compile(*rhs, chunk)?;
 
             let op = match operator.t_type {
                 TokenType::Plus => OpCode::AddI32,
-                TokenType::Minus => unimplemented!(),
+                TokenType::Minus => OpCode::SubI32,
                 _ => unreachable!(),
             };
 
@@ -49,6 +45,27 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
 
             Ok(chunk)
         }
-        _ => unimplemented!()
+        Expression::Multiplication(expr) => {
+            let Binary { lhs, operator, rhs } = expr.0;
+
+            chunk = compile(*lhs, chunk)?;
+            chunk = compile(*rhs, chunk)?;
+
+            let op = match operator.t_type {
+                TokenType::Star => OpCode::MulI32,
+                TokenType::Slash => OpCode::DivI32,
+                _ => unreachable!(),
+            };
+
+            chunk.push_op(op);
+
+            Ok(chunk)
+        }
+        Expression::Group(expr) => {
+            let Grouping { inner } = expr;
+
+            compile(*inner, chunk)
+        }
+        _ => unimplemented!(),
     }
 }

@@ -70,7 +70,7 @@ impl<'s> Parsable<'s> for Addition<'s> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Multiplication<'s>(Binary<'s>);
+pub struct Multiplication<'s>(pub Binary<'s>);
 
 impl<'s> From<Multiplication<'s>> for Expression<'s> {
     fn from(expr: Multiplication<'s>) -> Self {
@@ -112,7 +112,7 @@ fn primary<'a, 's>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Expression<'s
 // Grouped expressions, eq (1 + 1)
 #[derive(Debug, Eq, PartialEq)]
 pub struct Grouping<'s> {
-    inner: Box<Expression<'s>>,
+    pub inner: Box<Expression<'s>>,
 }
 
 impl<'s> Grouping<'s> {
