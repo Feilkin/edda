@@ -11,6 +11,7 @@ pub enum Expression<'s> {
     Addition(Addition<'s>),
     Multiplication(Multiplication<'s>),
     Literal(Literal<'s>),
+    Group(Grouping<'s>),
 }
 
 impl<'s> Parsable<'s> for Expression<'s> {
@@ -81,12 +82,12 @@ impl<'s> Parsable<'s> for Multiplication<'s> {
     type Node = Expression<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        let (mut expr, mut tail) = Literal::try_parse(tokens)?;
+        let (mut expr, mut tail) = primary(tokens)?;
 
         while peek_tokens!(tail, TokenType::Star, TokenType::Slash) {
             let (first, new_tail) = tail.split_first().expect("ran out of tokens when parsing");
             let operator = first.clone();
-            let (rhs, new_tail) = Literal::try_parse(new_tail)?;
+            let (rhs, new_tail) = primary(new_tail)?;
 
             expr = Multiplication(Binary::new(expr, operator, rhs)).into();
 
@@ -98,6 +99,47 @@ impl<'s> Parsable<'s> for Multiplication<'s> {
 }
 
 // Primaries
+fn primary<'a, 's>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Expression<'s>> {
+    match tokens[0] {
+        Token {
+            t_type: TokenType::LeftParen,
+            ..
+        } => Grouping::try_parse(tokens),
+        _ => Literal::try_parse(tokens),
+    }
+}
+
+// Grouped expressions, eq (1 + 1)
+#[derive(Debug, Eq, PartialEq)]
+pub struct Grouping<'s> {
+    inner: Box<Expression<'s>>,
+}
+
+impl<'s> Grouping<'s> {
+    pub fn new(inner: Expression<'s>) -> Grouping<'s> {
+        Grouping {
+            inner: Box::new(inner),
+        }
+    }
+}
+
+impl<'s> From<Grouping<'s>> for Expression<'s> {
+    fn from(g: Grouping<'s>) -> Self {
+        Expression::Group(g)
+    }
+}
+
+impl<'s> Parsable<'s> for Grouping<'s> {
+    type Node = Expression<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (_, tail) = match_tokens!(tokens, TokenType::LeftParen)?;
+        let (inner, tail) = Expression::try_parse(tail)?;
+        let (_, tail) = match_tokens!(tail, TokenType::RightParen)?;
+
+        Ok((Grouping::new(inner).into(), tail))
+    }
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Literal<'s>(Token<'s>);
