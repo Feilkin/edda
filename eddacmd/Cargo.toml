@@ -2,6 +2,7 @@
 name = "eddacmd"
 version = "0.1.0"
 authors = ["Aatu Hieta <aatu@hieta.fi>"]
+edition = "2018"
 
 [dependencies]
 edda = { path = "../edda" }

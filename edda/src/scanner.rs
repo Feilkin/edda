@@ -1,14 +1,24 @@
 //! it scans text
 
+use thiserror::Error as ThisError;
+
 // TODO: on-demand scanning
 use crate::token::{Token, TokenType};
+use crate::Error;
 
 type ScanResult<'s> = Result<Vec<Token<'s>>, ScanError>;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(ThisError, Debug, Eq, PartialEq)]
+#[error("Unexpected character {c} at offset {offset}")]
 pub struct ScanError {
     pub offset: usize,
     pub c: char,
+}
+
+impl From<ScanError> for Error {
+    fn from(d: ScanError) -> Self {
+        Error::ScanError(d)
+    }
 }
 
 macro_rules! trie {
@@ -180,12 +190,12 @@ macro_rules! match_tokens {
                 let mut $custom_source = $iter.clone();
 
                 match $custom_body {
-                    Some((t_type, len)) => {
+                    Ok(res) => {
                         $iter = $custom_source;
 
-                        Ok(Some((t_type, len)))
+                        Ok(res)
                     },
-                    None => Err(ScanError {
+                    Err(()) => Err(ScanError {
                         $offset,
                         c: val
                     })
@@ -280,6 +290,37 @@ pub fn scan(source: &str) -> ScanResult {
                     Some((Equal, 1))
                 });
 
+                trie_or [
+                    '-' => [
+                        '=' => (MinusEqual, 2),
+                        '>' => (Arrow, 2),
+                    ]
+                ] -> (|_c, _source| {
+                    Some((Minus, 1))
+                });
+
+                custom '/' => (_c, source) {
+                    let mut len = 1;
+
+                    match source.peek() {
+                        Some((_, cc)) if *cc == '/' => {
+                            // comment, consume until newline
+                            source.next();
+
+                            while match source.peek() {
+                                Some((_, cc)) if *cc == '\n' => false,
+                                _ => true,
+                            } {
+                                source.next();
+                                len += 1;
+                            }
+
+                            Ok(None)
+                        },
+                        _ => Ok(Some((Slash, 1))),
+                    }
+                }
+
                 custom '0' ..= '9' => (_c, source) {
                     let mut len = 1;
 
@@ -294,7 +335,7 @@ pub fn scan(source: &str) -> ScanResult {
                         len += 1;
                     }
 
-                    Some((Integer, len))
+                    Ok(Some((Integer, len)))
                 }
 
                 ignore [

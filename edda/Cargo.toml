@@ -3,3 +3,8 @@ name = "edda"
 version = "0.1.0"
 authors = ["Aatu Hieta <aatu@hieta.fi>"]
 edition = "2018"
+
+[dependencies]
+derive-try-from-primitive = "0.1.0"
+colored = "1.9.3"
+thiserror = "1.0.20"

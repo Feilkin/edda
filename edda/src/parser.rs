@@ -1,11 +1,97 @@
 //! Parser types, traits, and utility functions
 
+use std::fmt::{Error as FmtError, Write};
+
 use crate::token::{Token, TokenType};
+use crate::Error;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ParseError<'s> {
     pub token: Token<'s>,
     pub expected: Vec<TokenType>,
+}
+
+impl<'s> ParseError<'s> {
+    // TODO: source should come from the token?
+    pub fn display_err(&self, source: &str) -> Result<String, FmtError> {
+        // TODO: implement Display on tokentype
+        let error_msg = if (self.expected.len() == 1) {
+            format!("Unexpected {}, expected {:?} instead!", self.token, self.expected[0])
+        } else {
+            format!("Unexpected {}, expected one of [ {} ] instead!", self.token, self.expected.iter().fold(String::new(), |a, b| format!("{}, {:?}", a, b)))
+        };
+
+        // count lines
+        let mut line_num = 0;
+        let mut column = 0;
+        {
+            let mut cur = 0;
+            for c in source.chars() {
+                if cur >= self.token.offset {
+                    break;
+                }
+                match c {
+                    '\n' => {
+                        line_num += 1;
+                        column = 0;
+                    }
+                    '\t' => column += 8,
+                    _ => column += 1,
+                }
+                cur += 1;
+            }
+        }
+        let line_num_width = std::cmp::max((line_num as f64).log10() as usize, 5);
+
+        let blame_width = self.token.text.len();
+
+        let blame_line = source.lines().nth(line_num).unwrap();
+        let blame_marker = format!("{}---", "^".repeat(blame_width));
+
+        let mut buffer = String::new();
+        use colored::*;
+
+        writeln!(buffer, "Parse error on line {}: {}", line_num + 1, error_msg)?;
+        writeln!(buffer,
+                 "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(buffer,
+                 "{:^line_num_width$} | [...] ",
+                 " line",
+                 line_num_width = line_num_width
+        )?;
+
+        if line_num > 0 {
+            // print some lines before
+            let start = if line_num > 4 { line_num - 4 } else { 0 };
+
+            for i in start..line_num {
+                writeln!(buffer,
+                         "{:line_num_width$} | {}",
+                         i + 1,
+                         source.lines().nth(i).unwrap(),
+                         line_num_width = line_num_width
+                )?;
+            }
+        }
+
+        writeln!(buffer,
+                 "{:line_num_width$} | {}",
+                 line_num + 1,
+                 blame_line.bold(),
+                 line_num_width = line_num_width
+        )?;
+        writeln!(buffer,
+                 "{:line_num_width$} : {}{} {}",
+                 "",
+                 " ".repeat(column),
+                 blame_marker.red(),
+                 error_msg.bold(),
+                 line_num_width = line_num_width
+        )?;
+
+        Ok(buffer)
+    }
 }
 
 pub type ParseResult<'s, 'a, R> = Result<(R, &'a [Token<'s>]), Vec<ParseError<'s>>>;

@@ -1,14 +1,11 @@
-extern crate edda;
-
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
-use edda::parser::{parse_tokens, ParseError};
-use edda::scanner::{scan_tokens, ScanError};
-use edda::vm::{Compiler, Vm};
+use edda::{compile, scan, Chunk, Error as EddaError, Expression, Vm};
+use std::error::Error;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
     let mut filename = "examples/helloworld.edda";
 
@@ -21,26 +18,23 @@ fn main() {
     let mut script = String::new();
     f.read_to_string(&mut script)
         .expect("something went wrong reading the file");
-    
-    let tokens = scan_tokens(&script).unwrap();
-    let ast = match parse_tokens(&tokens) {
-        Ok(statements) => statements,
-        Err(parse_errors) => {
-            for parse_error in parse_errors {
-                edda::print_parse_error(&parse_error, &script);
-                println!("");
+
+    let tokens = scan(&script)?;
+
+    use edda::parser::Parsable;
+    let ast = match Expression::try_parse(&tokens) {
+        Ok((ast, _)) => ast,
+        Err(parse_errs) => {
+            for err in parse_errs {
+                println!("{}", err.display_err(&script)?);
             }
-            return;
+
+            return Ok(());
         }
     };
+    let mut chunk = compile(ast, Chunk::new())?;
+    let vm = Vm::new(chunk);
+    vm.run();
 
-    // compile ast to bytecode
-    let mut compiler = Compiler::new();
-    let chunk = compiler.compile(&ast);
-
-    let mut vm = Vm::new();
-    vm.enable_tracing();
-    let val = vm.interpret::<f64>(&chunk).unwrap();
-
-    println!("val: {}", val);
+    Ok(())
 }

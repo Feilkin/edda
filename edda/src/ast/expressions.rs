@@ -40,7 +40,7 @@ impl<'s> Binary<'s> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Addition<'s>(Binary<'s>);
+pub struct Addition<'s>(pub Binary<'s>);
 
 impl<'s> From<Addition<'s>> for Expression<'s> {
     fn from(expr: Addition<'s>) -> Self {
@@ -101,6 +101,12 @@ impl<'s> Parsable<'s> for Multiplication<'s> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Literal<'s>(Token<'s>);
+
+impl<'s> Literal<'s> {
+    pub fn token(&self) -> &Token<'s> {
+        &self.0
+    }
+}
 
 impl<'s> From<Literal<'s>> for Expression<'s> {
     fn from(expr: Literal<'s>) -> Self {
