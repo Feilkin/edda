@@ -2,12 +2,12 @@ use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
-use edda::{compile, scan, Chunk, Error as EddaError, Expression, OpCode, Vm, VmState};
+use edda::{compile, parser, scan, Chunk, Error as EddaError, Expression, OpCode, Vm, VmState};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
-    let mut filename = "examples/helloworld.edda";
+    let mut filename = "examples/fibonacci.edda";
 
     if args.len() > 1 {
         filename = &args[1];
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tokens = scan(&script)?;
 
     use edda::parser::Parsable;
-    let ast = match Expression::try_parse(&tokens) {
+    let ast = match parser::script(&tokens) {
         Ok((ast, _)) => ast,
         Err(parse_errs) => {
             for err in parse_errs {
@@ -33,7 +33,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     let mut chunk = compile(ast, Chunk::new())?;
-    chunk.push_op(OpCode::Return);
 
     println!("{:?}", &chunk);
 

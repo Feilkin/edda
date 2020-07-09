@@ -248,7 +248,7 @@ pub fn scan(source: &str) -> ScanResult {
                         'a' 'n' 'd' => (And, 3),
                         'e' 'l' 's' 'e' => (Else, 4),
                         'f' => [
-                            // TODO: functions
+                            'n' => (Fn, 2),
                             'o' 'r' => (For, 3),
                             'a' 'l' 's' 'e' => (False, 5),
                         ],

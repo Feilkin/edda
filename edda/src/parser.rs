@@ -2,6 +2,7 @@
 
 use std::fmt::{Error as FmtError, Write};
 
+use crate::ast::statements::Statement;
 use crate::token::{Token, TokenType};
 use crate::Error;
 
@@ -16,9 +17,18 @@ impl<'s> ParseError<'s> {
     pub fn display_err(&self, source: &str) -> Result<String, FmtError> {
         // TODO: implement Display on tokentype
         let error_msg = if (self.expected.len() == 1) {
-            format!("Unexpected {}, expected {:?} instead!", self.token, self.expected[0])
+            format!(
+                "Unexpected {}, expected {:?} instead!",
+                self.token, self.expected[0]
+            )
         } else {
-            format!("Unexpected {}, expected one of [ {} ] instead!", self.token, self.expected.iter().fold(String::new(), |a, b| format!("{}, {:?}", a, b)))
+            format!(
+                "Unexpected {}, expected one of [ {} ] instead!",
+                self.token,
+                self.expected
+                    .iter()
+                    .fold(String::new(), |a, b| format!("{}, {:?}", a, b))
+            )
         };
 
         // count lines
@@ -51,14 +61,21 @@ impl<'s> ParseError<'s> {
         let mut buffer = String::new();
         use colored::*;
 
-        writeln!(buffer, "Parse error on line {}: {}", line_num + 1, error_msg)?;
-        writeln!(buffer,
-                 "--------------------------------------------------------------------------------"
+        writeln!(
+            buffer,
+            "Parse error on line {}: {}",
+            line_num + 1,
+            error_msg
         )?;
-        writeln!(buffer,
-                 "{:^line_num_width$} | [...] ",
-                 " line",
-                 line_num_width = line_num_width
+        writeln!(
+            buffer,
+            "--------------------------------------------------------------------------------"
+        )?;
+        writeln!(
+            buffer,
+            "{:^line_num_width$} | [...] ",
+            " line",
+            line_num_width = line_num_width
         )?;
 
         if line_num > 0 {
@@ -66,28 +83,31 @@ impl<'s> ParseError<'s> {
             let start = if line_num > 4 { line_num - 4 } else { 0 };
 
             for i in start..line_num {
-                writeln!(buffer,
-                         "{:line_num_width$} | {}",
-                         i + 1,
-                         source.lines().nth(i).unwrap(),
-                         line_num_width = line_num_width
+                writeln!(
+                    buffer,
+                    "{:line_num_width$} | {}",
+                    i + 1,
+                    source.lines().nth(i).unwrap(),
+                    line_num_width = line_num_width
                 )?;
             }
         }
 
-        writeln!(buffer,
-                 "{:line_num_width$} | {}",
-                 line_num + 1,
-                 blame_line.bold(),
-                 line_num_width = line_num_width
+        writeln!(
+            buffer,
+            "{:line_num_width$} | {}",
+            line_num + 1,
+            blame_line.bold(),
+            line_num_width = line_num_width
         )?;
-        writeln!(buffer,
-                 "{:line_num_width$} : {}{} {}",
-                 "",
-                 " ".repeat(column),
-                 blame_marker.red(),
-                 error_msg.bold(),
-                 line_num_width = line_num_width
+        writeln!(
+            buffer,
+            "{:line_num_width$} : {}{} {}",
+            "",
+            " ".repeat(column),
+            blame_marker.red(),
+            error_msg.bold(),
+            line_num_width = line_num_width
         )?;
 
         Ok(buffer)
@@ -140,15 +160,31 @@ macro_rules! peek_tokens {
     };
 }
 
-pub fn semicolon<'s>(tokens: &[Token<'s>]) -> Result<(), Vec<ParseError<'s>>> {
+pub fn semicolon<'a, 's>(
+    tokens: &'a [Token<'s>],
+) -> Result<((), &'a [Token<'s>]), Vec<ParseError<'s>>> {
     match tokens.first().unwrap() {
         Token {
             t_type: TokenType::Semicolon,
             ..
-        } => Ok(()),
+        } => Ok(((), &tokens[1..])),
         unexpected @ _ => Err(vec![ParseError {
             token: *unexpected,
             expected: vec![TokenType::Semicolon],
         }]),
     }
+}
+
+pub fn script<'a, 's>(source: &'a [Token<'s>]) -> ParseResult<'s, 'a, Vec<Statement<'s>>> {
+    let mut tail = source;
+    let mut statements = Vec::new();
+
+    while !peek_tokens!(tail, TokenType::Eof) {
+        let (stmt, new_tail) = Statement::try_parse(tail)?;
+        tail = new_tail;
+
+        statements.push(stmt);
+    }
+
+    Ok((statements, tail))
 }

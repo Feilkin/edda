@@ -6,4 +6,4 @@ fn fib(n) -> i32 {
     else fib(n - 1) + fib(n - 2)
 }
 
-return fib(100)
+return fib(100);

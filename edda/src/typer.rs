@@ -16,18 +16,26 @@ pub struct TypeError {
 pub enum Type {
     I32,
     Boolean,
+    Function(Vec<Type>, Box<Type>),
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "{}",
-            match self {
-                Type::Boolean => "bool",
-                Type::I32 => "i32",
-            }
-        )
+        let s = match self {
+            Type::Boolean => "bool".to_owned(),
+            Type::I32 => "i32".to_owned(),
+            Type::Function(params, ret) => format!(
+                "({}) -> {}",
+                params
+                    .iter()
+                    .map(|p| format!("{}", p))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                ret
+            ),
+        };
+
+        write!(f, "{}", s)
     }
 }
 

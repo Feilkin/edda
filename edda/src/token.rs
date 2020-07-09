@@ -48,6 +48,7 @@ pub enum TokenType {
     Arrow,
     FatArrow,
     Identifier,
+    Fn,
     Let,
     And,
     Or,

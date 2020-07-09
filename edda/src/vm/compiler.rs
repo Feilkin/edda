@@ -3,6 +3,7 @@
 use thiserror::Error as ThisError;
 
 use crate::ast::expressions::{Addition, Binary, Expression, Grouping};
+use crate::ast::statements::Statement;
 use crate::token::TokenType;
 use crate::typer::{Type, TypeError, Typer};
 use crate::vm::bytecode::{Chunk, OpCode};
@@ -22,7 +23,24 @@ impl From<CompilerError> for Error {
 
 type CompilerResult = Result<Chunk, CompilerError>;
 
-pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
+pub fn compile(script: Vec<Statement>, mut chunk: Chunk) -> CompilerResult {
+    for stmt in script {
+        chunk = compile_statement(stmt, chunk)?;
+    }
+
+    Ok(chunk)
+}
+
+pub fn compile_statement(stmt: Statement, mut chunk: Chunk) -> CompilerResult {
+    match stmt {
+        Statement::Return(_) => {
+            chunk.push_op(OpCode::Return);
+            Ok(chunk)
+        }
+    }
+}
+
+pub fn compile_expr(ast: Expression, mut chunk: Chunk) -> CompilerResult {
     let typer = Typer::new();
 
     match ast {
@@ -37,8 +55,8 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
         Expression::Addition(expr) => {
             let Binary { lhs, operator, rhs } = expr.0;
 
-            chunk = compile(*lhs, chunk)?;
-            chunk = compile(*rhs, chunk)?;
+            chunk = compile_expr(*lhs, chunk)?;
+            chunk = compile_expr(*rhs, chunk)?;
 
             let op = match operator.t_type {
                 TokenType::Plus => OpCode::AddI32,
@@ -53,8 +71,8 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
         Expression::Multiplication(expr) => {
             let Binary { lhs, operator, rhs } = expr.0;
 
-            chunk = compile(*lhs, chunk)?;
-            chunk = compile(*rhs, chunk)?;
+            chunk = compile_expr(*lhs, chunk)?;
+            chunk = compile_expr(*rhs, chunk)?;
 
             let op = match operator.t_type {
                 TokenType::Star => OpCode::MulI32,
@@ -69,7 +87,7 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
         Expression::Group(expr) => {
             let Grouping { inner } = expr;
 
-            compile(*inner, chunk)
+            compile_expr(*inner, chunk)
         }
         Expression::If(if_expr) => {
             let cond_type = typer.infer_type(if_expr.condition.as_ref())?;
@@ -92,13 +110,13 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
                 }
                 .into())
             } else {
-                chunk = compile(*if_expr.condition, chunk)?;
+                chunk = compile_expr(*if_expr.condition, chunk)?;
                 chunk.push_op(OpCode::JumpIfFalse);
 
                 // we need to backpatch jump location
                 let then_jump = chunk.head();
                 chunk.push_value(0xFF_FF_u16.to_le_bytes());
-                chunk = compile(*if_expr.body, chunk)?;
+                chunk = compile_expr(*if_expr.body, chunk)?;
 
                 // if expressions always have else, so push jump and
                 chunk.push_op(OpCode::Jump);
@@ -109,7 +127,7 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
                 let then_relative = chunk.head_short() - then_jump as u16;
                 chunk.set_value(then_relative.to_le_bytes(), then_jump);
 
-                chunk = compile(*if_expr.else_body, chunk)?;
+                chunk = compile_expr(*if_expr.else_body, chunk)?;
 
                 // backpatch else jump
                 let else_relative = chunk.head_short() - else_jump as u16;
@@ -121,8 +139,8 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
         Expression::Equality(expr) => {
             let Binary { lhs, operator, rhs } = expr.0;
 
-            chunk = compile(*lhs, chunk)?;
-            chunk = compile(*rhs, chunk)?;
+            chunk = compile_expr(*lhs, chunk)?;
+            chunk = compile_expr(*rhs, chunk)?;
 
             chunk.push_op(OpCode::EqualI32);
 
@@ -137,8 +155,8 @@ pub fn compile(ast: Expression, mut chunk: Chunk) -> CompilerResult {
                 _ => (lhs, rhs),
             };
 
-            chunk = compile(*lhs, chunk)?;
-            chunk = compile(*rhs, chunk)?;
+            chunk = compile_expr(*lhs, chunk)?;
+            chunk = compile_expr(*rhs, chunk)?;
 
             let op = match operator.t_type {
                 TokenType::Less | TokenType::GreaterEqual => OpCode::LessI32,
