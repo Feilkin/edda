@@ -13,27 +13,19 @@ pub enum Statement<'s> {
     Return(ReturnStmt<'s>),
     /// Function declaration.
     Fn(FnDecl<'s>),
+    /// Variable declaration.
+    VarDecl(VarDecl<'s>),
 }
 
 impl<'s> Parsable<'s> for Statement<'s> {
     type Node = Statement<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        match tokens.first() {
-            Some(Token {
-                t_type: TokenType::Return,
-                ..
-            }) => ReturnStmt::try_parse(tokens),
-            Some(Token {
-                t_type: TokenType::Fn,
-                ..
-            }) => FnDecl::try_parse(tokens),
-            Some(t) => Err(Vec::from(ParseError {
-                token: *t,
-                expected: vec![TokenType::Return, TokenType::If],
-            })),
-            None => panic!("should have atleast one token!!"),
-        }
+        match_and!(tokens,
+            TokenType::Return => ReturnStmt::try_parse(tokens),
+            TokenType::Fn => FnDecl::try_parse(tokens),
+            TokenType::Let => VarDecl::try_parse(tokens),
+        )
     }
 }
 
@@ -124,6 +116,41 @@ impl<'s> Parsable<'s> for FnDecl<'s> {
                 params,
                 ret_type,
                 body: Box::new(body),
+            }
+            .into(),
+            tail,
+        ))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct VarDecl<'s> {
+    identifier: Token<'s>,
+    initializer: Box<Expression<'s>>,
+}
+
+impl<'s> From<VarDecl<'s>> for Statement<'s> {
+    fn from(s: VarDecl<'s>) -> Self {
+        Statement::VarDecl(s)
+    }
+}
+
+impl<'s> Parsable<'s> for VarDecl<'s> {
+    type Node = Statement<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (_, tail) = match_tokens!(tokens, TokenType::Let)?;
+        let (identifier, tail) = match_tokens!(tail, TokenType::Identifier)?;
+        let (_, tail) = match_tokens!(tail, TokenType::Equal)?;
+
+        let (initializer, tail) = Expression::try_parse(tail)?;
+
+        let (_, tail) = semicolon(tail)?;
+
+        Ok((
+            VarDecl {
+                identifier,
+                initializer: Box::new(initializer),
             }
             .into(),
             tail,

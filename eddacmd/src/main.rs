@@ -7,7 +7,7 @@ use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
-    let mut filename = "examples/fibonacci.edda";
+    let mut filename = "examples/bindings.edda";
 
     if args.len() > 1 {
         filename = &args[1];

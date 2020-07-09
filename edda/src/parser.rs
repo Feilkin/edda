@@ -160,16 +160,16 @@ macro_rules! peek_tokens {
 }
 
 macro_rules! match_and {
-    ($token_stream:ident, $($valid:path => $body:expr),+) => {
+    ($token_stream:ident, $($valid:path => $body:expr),+ $(,)?) => {
         match $token_stream.first().unwrap() {
             $(Token @ Token {
                 t_type: $valid,
                 ..
-            } => $body,)+,
-            unexpected @ _ => Err(crate::parser::ParseError {
+            } => $body,)+
+            unexpected @ _ => Err(vec![crate::parser::ParseError {
                 token: unexpected.clone(),
-                expected: vec![$(valid,)+]
-            })
+                expected: vec![$($valid,)+]
+            }])
         }
     };
 }
