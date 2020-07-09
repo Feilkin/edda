@@ -2,7 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
-use edda::{compile, parser, scan, Chunk, Error as EddaError, Expression, OpCode, Vm, VmState};
+use edda::{parser, scan, Chunk, Compiler, Error as EddaError, Expression, OpCode, Vm, VmState};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-    let mut chunk = compile(ast, Chunk::new())?;
+    let compiler = Compiler::new();
+    let mut chunk = compiler.compile(ast, Chunk::new())?;
 
     println!("{:?}", &chunk);
 

@@ -16,7 +16,7 @@ pub use ast::expressions::Expression;
 pub use scanner::scan;
 pub use vm::{
     bytecode::{Chunk, OpCode},
-    compiler::compile,
+    compiler::Compiler,
     Vm, VmState,
 };
 

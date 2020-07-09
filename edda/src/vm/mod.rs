@@ -8,6 +8,7 @@ use std::fmt::{Debug, Error, Formatter};
 pub mod bytecode;
 pub mod compiler;
 pub mod errors;
+mod function;
 
 const SCRIPT_MEMORY: usize = 256;
 

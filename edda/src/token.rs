@@ -11,7 +11,7 @@ pub struct Token<'s> {
 
 impl<'s> Display for Token<'s> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.text)
+        write!(f, "{:?} {:?}", self.t_type, self.text)
     }
 }
 

@@ -8,13 +8,15 @@ use crate::token::{Token, TokenType};
 /// Entry point for expression parsing
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expression<'s> {
+    If(IfExpr<'s>),
+    Equality(Equality<'s>),
+    Comparison(Comparison<'s>),
     Addition(Addition<'s>),
     Multiplication(Multiplication<'s>),
+    Call(Call<'s>),
     Literal(Literal<'s>),
+    Variable(Variable<'s>),
     Group(Grouping<'s>),
-    Comparison(Comparison<'s>),
-    Equality(Equality<'s>),
-    If(IfExpr<'s>),
 }
 
 impl<'s> Parsable<'s> for Expression<'s> {
@@ -84,64 +86,6 @@ impl<'s> Binary<'s> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Addition<'s>(pub Binary<'s>);
-
-impl<'s> From<Addition<'s>> for Expression<'s> {
-    fn from(expr: Addition<'s>) -> Self {
-        Expression::Addition(expr)
-    }
-}
-
-impl<'s> Parsable<'s> for Addition<'s> {
-    type Node = Expression<'s>;
-
-    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        let (mut expr, mut tail) = Multiplication::try_parse(tokens)?;
-
-        while peek_tokens!(tail, TokenType::Plus, TokenType::Minus) {
-            let (first, new_tail) = tail.split_first().expect("ran out of tokens while parsing");
-            let operator = first.clone();
-            let (rhs, new_tail) = Multiplication::try_parse(new_tail)?;
-
-            expr = Addition(Binary::new(expr, operator, rhs)).into();
-
-            tail = new_tail;
-        }
-
-        Ok((expr, tail))
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct Multiplication<'s>(pub Binary<'s>);
-
-impl<'s> From<Multiplication<'s>> for Expression<'s> {
-    fn from(expr: Multiplication<'s>) -> Self {
-        Expression::Multiplication(expr)
-    }
-}
-
-impl<'s> Parsable<'s> for Multiplication<'s> {
-    type Node = Expression<'s>;
-
-    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        let (mut expr, mut tail) = primary(tokens)?;
-
-        while peek_tokens!(tail, TokenType::Star, TokenType::Slash) {
-            let (first, new_tail) = tail.split_first().expect("ran out of tokens when parsing");
-            let operator = first.clone();
-            let (rhs, new_tail) = primary(new_tail)?;
-
-            expr = Multiplication(Binary::new(expr, operator, rhs)).into();
-
-            tail = new_tail;
-        }
-
-        Ok((expr, tail))
-    }
-}
-
 // equality + comparison
 
 #[derive(Debug, Eq, PartialEq)]
@@ -208,6 +152,116 @@ impl<'s> Parsable<'s> for Comparison<'s> {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct Addition<'s>(pub Binary<'s>);
+
+impl<'s> From<Addition<'s>> for Expression<'s> {
+    fn from(expr: Addition<'s>) -> Self {
+        Expression::Addition(expr)
+    }
+}
+
+impl<'s> Parsable<'s> for Addition<'s> {
+    type Node = Expression<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (mut expr, mut tail) = Multiplication::try_parse(tokens)?;
+
+        while peek_tokens!(tail, TokenType::Plus, TokenType::Minus) {
+            let (first, new_tail) = tail.split_first().expect("ran out of tokens while parsing");
+            let operator = first.clone();
+            let (rhs, new_tail) = Multiplication::try_parse(new_tail)?;
+
+            expr = Addition(Binary::new(expr, operator, rhs)).into();
+
+            tail = new_tail;
+        }
+
+        Ok((expr, tail))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Multiplication<'s>(pub Binary<'s>);
+
+impl<'s> From<Multiplication<'s>> for Expression<'s> {
+    fn from(expr: Multiplication<'s>) -> Self {
+        Expression::Multiplication(expr)
+    }
+}
+
+impl<'s> Parsable<'s> for Multiplication<'s> {
+    type Node = Expression<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (mut expr, mut tail) = Call::try_parse(tokens)?;
+
+        while peek_tokens!(tail, TokenType::Star, TokenType::Slash) {
+            let (first, new_tail) = tail.split_first().expect("ran out of tokens when parsing");
+            let operator = first.clone();
+            let (rhs, new_tail) = Call::try_parse(new_tail)?;
+
+            expr = Multiplication(Binary::new(expr, operator, rhs)).into();
+
+            tail = new_tail;
+        }
+
+        Ok((expr, tail))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Call<'s> {
+    callee: Box<Expression<'s>>,
+    arguments: Vec<Expression<'s>>,
+}
+
+impl<'s> From<Call<'s>> for Expression<'s> {
+    fn from(expr: Call<'s>) -> Self {
+        Expression::Call(expr)
+    }
+}
+
+impl<'s> Parsable<'s> for Call<'s> {
+    type Node = Expression<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (mut expr, mut tail) = primary(tokens)?;
+
+        while peek_tokens!(tail, TokenType::LeftParen) {
+            // skip opening paren
+            tail = &tail[1..];
+            let mut arguments = Vec::new();
+
+            while !peek_tokens!(tail, TokenType::RightParen) {
+                let (arg, new_tail) = Expression::try_parse(tail)?;
+                arguments.push(arg);
+                tail = new_tail;
+
+                // if next is ), break, else consume a ,
+                // maybe not the best way to achieve (e1, e2, ..., eN) parsing
+                if peek_tokens!(tail, TokenType::RightParen) {
+                    break;
+                }
+
+                let (_, new_tail) = match_tokens!(tail, TokenType::Comma)?;
+                tail = new_tail;
+            }
+
+            let (_, new_tail) = match_tokens!(tail, TokenType::RightParen)?;
+            tail = new_tail;
+
+            expr = Call {
+                callee: Box::new(expr),
+                arguments,
+            }
+            .into();
+        }
+
+        Ok((expr, tail))
+    }
+}
+
 // Primaries
 fn primary<'a, 's>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Expression<'s>> {
     match tokens[0] {
@@ -215,6 +269,10 @@ fn primary<'a, 's>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Expression<'s
             t_type: TokenType::LeftParen,
             ..
         } => Grouping::try_parse(tokens),
+        Token {
+            t_type: TokenType::Identifier,
+            ..
+        } => Variable::try_parse(tokens),
         _ => Literal::try_parse(tokens),
     }
 }
@@ -272,6 +330,30 @@ impl<'s> Parsable<'s> for Literal<'s> {
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
         let (value, tail) = match_tokens!(tokens, TokenType::Integer)?;
         Ok((Literal(value).into(), tail))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Variable<'s>(Token<'s>);
+
+impl<'s> Variable<'s> {
+    pub fn token(&self) -> &Token<'s> {
+        &self.0
+    }
+}
+
+impl<'s> From<Variable<'s>> for Expression<'s> {
+    fn from(expr: Variable<'s>) -> Self {
+        Expression::Variable(expr)
+    }
+}
+
+impl<'s> Parsable<'s> for Variable<'s> {
+    type Node = Expression<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (value, tail) = match_tokens!(tokens, TokenType::Identifier)?;
+        Ok((Variable(value).into(), tail))
     }
 }
 

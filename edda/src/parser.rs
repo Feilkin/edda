@@ -5,6 +5,7 @@ use std::fmt::{Error as FmtError, Write};
 use crate::ast::statements::Statement;
 use crate::token::{Token, TokenType};
 use crate::Error;
+use itertools::Itertools;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ParseError<'s> {
@@ -25,9 +26,7 @@ impl<'s> ParseError<'s> {
             format!(
                 "Unexpected {}, expected one of [ {} ] instead!",
                 self.token,
-                self.expected
-                    .iter()
-                    .fold(String::new(), |a, b| format!("{}, {:?}", a, b))
+                self.expected.iter().map(|e| format!("{:?}", e)).join(", ")
             )
         };
 

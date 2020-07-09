@@ -260,6 +260,7 @@ pub fn scan(source: &str) -> ScanResult {
                         'o' 'r' => (Or, 2),
                         'p' 'r' 'i' 'n' 't' => (Print, 5),
                         't' 'r' 'u' 'e' => (True, 4),
+                        'r' 'e' 't' 'u' 'r' 'n' => (Return, 6),
                     ]
                 ] -> (|_c, source: &mut Peekable<CharIndices>| {
                     // TODO: make identifier here
@@ -294,8 +295,10 @@ pub fn scan(source: &str) -> ScanResult {
 
                 trie_or [
                     '-' => [
-                        '=' => (MinusEqual, 2),
-                        '>' => (Arrow, 2),
+                        '-' => [
+                            '=' => (MinusEqual, 2),
+                            '>' => (Arrow, 2),
+                        ],
                     ]
                 ] -> (|_c, _source| {
                     Some((Minus, 1))
