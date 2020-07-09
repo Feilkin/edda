@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Error, Formatter};
 
+use crate::ast::statements::Statement;
 use crate::parser::{Parsable, ParseError, ParseResult};
 use crate::token::{Token, TokenType};
 
@@ -17,6 +18,7 @@ pub enum Expression<'s> {
     Literal(Literal<'s>),
     Variable(Variable<'s>),
     Group(Grouping<'s>),
+    Block(BlockExpr<'s>),
 }
 
 impl<'s> Parsable<'s> for Expression<'s> {
@@ -52,10 +54,15 @@ impl<'s> Parsable<'s> for IfExpr<'s> {
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
         let (_, tail) = match_tokens!(tokens, TokenType::If)?;
         let (condition, tail) = Expression::try_parse(tail)?;
-        let (body, tail) = Expression::try_parse(tail)?;
+        let (body, tail) = BlockExpr::try_parse(tail)?;
         let (_, tail) = match_tokens!(tail, TokenType::Else)?;
-        let (else_body, tail) = Expression::try_parse(tail)?;
 
+        // allow chaining if after else
+        let (else_body, tail) = if peek_tokens!(tail, TokenType::If) {
+            IfExpr::try_parse(tail)
+        } else {
+            BlockExpr::try_parse(tail)
+        }?;
         Ok((
             IfExpr {
                 condition: Box::new(condition),
@@ -273,6 +280,10 @@ fn primary<'a, 's>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Expression<'s
             t_type: TokenType::Identifier,
             ..
         } => Variable::try_parse(tokens),
+        Token {
+            t_type: TokenType::LeftBrace,
+            ..
+        } => BlockExpr::try_parse(tokens),
         _ => Literal::try_parse(tokens),
     }
 }
@@ -292,8 +303,8 @@ impl<'s> Grouping<'s> {
 }
 
 impl<'s> From<Grouping<'s>> for Expression<'s> {
-    fn from(g: Grouping<'s>) -> Self {
-        Expression::Group(g)
+    fn from(e: Grouping<'s>) -> Self {
+        Expression::Group(e)
     }
 }
 
@@ -306,6 +317,59 @@ impl<'s> Parsable<'s> for Grouping<'s> {
         let (_, tail) = match_tokens!(tail, TokenType::RightParen)?;
 
         Ok((Grouping::new(inner).into(), tail))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct BlockExpr<'s> {
+    pub statements: Vec<Statement<'s>>,
+    pub ret: Box<Expression<'s>>,
+}
+
+impl<'s> BlockExpr<'s> {
+    pub fn new(statements: Vec<Statement<'s>>, ret: Expression<'s>) -> BlockExpr<'s> {
+        BlockExpr {
+            statements,
+            ret: Box::new(ret),
+        }
+    }
+}
+
+impl<'s> From<BlockExpr<'s>> for Expression<'s> {
+    fn from(e: BlockExpr<'s>) -> Self {
+        Expression::Block(e)
+    }
+}
+
+impl<'s> Parsable<'s> for BlockExpr<'s> {
+    type Node = Expression<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (_, mut tail) = match_tokens!(tokens, TokenType::LeftBrace)?;
+
+        let mut statements = Vec::new();
+
+        let (ret, tail) = loop {
+            // because we can't tell expression from statement before we actually try parsing it,
+            // we have to do this stupid try match thing
+            match Statement::try_parse(tail) {
+                Ok((stmt, new_tail)) => {
+                    statements.push(stmt);
+                    tail = new_tail;
+                }
+                Err(mut stmt_errs) => {
+                    // this could be the tailing expression
+                    break Expression::try_parse(tail).or_else(|err| {
+                        stmt_errs.extend(err);
+                        Err(stmt_errs)
+                    })?;
+                }
+            }
+        };
+
+        let (_, tail) = match_tokens!(tail, TokenType::RightBrace)?;
+
+        Ok((BlockExpr::new(statements, ret).into(), tail))
     }
 }
 

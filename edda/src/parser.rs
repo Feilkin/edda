@@ -159,6 +159,21 @@ macro_rules! peek_tokens {
     };
 }
 
+macro_rules! match_and {
+    ($token_stream:ident, $($valid:path => $body:expr),+) => {
+        match $token_stream.first().unwrap() {
+            $(Token @ Token {
+                t_type: $valid,
+                ..
+            } => $body,)+,
+            unexpected @ _ => Err(crate::parser::ParseError {
+                token: unexpected.clone(),
+                expected: vec![$(valid,)+]
+            })
+        }
+    };
+}
+
 pub fn semicolon<'a, 's>(
     tokens: &'a [Token<'s>],
 ) -> Result<((), &'a [Token<'s>]), Vec<ParseError<'s>>> {

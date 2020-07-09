@@ -70,7 +70,7 @@ printStatement  = Print expression Semicolon ;
 exportStatement = Export expression (Comma expression)* Semicolon ;
 expression      = ifExpression
                 | range ;
-ifExpression    = If expression blockExpression ( Else blockExpression )? ;
+ifExpression    = If expression blockExpression ( Else blockExpression | ifExpression )? ;
 range           = equality DotDot equality ;
 equality        = comparison ( ( BangEquality | EqualityEquality ) comparison )* ;
 comparsion      = addition ( ( Less | LessEqual | Greater | GreaterEqual ) addition )* ;
@@ -86,7 +86,8 @@ primary         = Number
                 | LeftParen expression RightParen
                 | Identifier
                 | Global Identifier
-                | funcExpression ;
+                | funcExpression
+                | blockExpression ;
 paramList       = LeftParen (Identifier (Comma Identifier)* )? RightParen ;
 arguments       = expression ( Comma expression )* ;
 funcExpression  = paramList? Arrow blockExpression ;
