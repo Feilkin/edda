@@ -117,8 +117,8 @@ impl Vm {
 
                 // Instead of allocating temp buffer for the return value, we can just use a slice
                 // on self.mem, as this memory will not get mutated.
-                let ret_range = self.sp - ret_size + 1..self.sp + 1;
-                self.pop_bytes(scope_size);
+                let ret_range = self.sp + 1..self.sp + ret_size + 1;
+                self.pop_bytes(scope_size + ret_size);
                 self.push_slice_from_mem(ret_range).unwrap();
             }
             u @ _ => unimplemented!("opcode {:?} is not implemented!", u),

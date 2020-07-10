@@ -11,7 +11,7 @@ pub enum OpCode {
     Return = 0x00,
     /// Return from block expression.
     /// First, pops A (u16) bytes from the stack as the return value,
-    /// and after that, pops (discards) B (u16) values from the stack,
+    /// and after that, pops (discards) A + B (u16) bytes from the stack,
     /// and lastly, pushes return value back to stack.
     BlockReturn = 0x01,
     /// Push constant i32 to stack
