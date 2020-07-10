@@ -105,6 +105,12 @@ impl<'s> Compiler<'s> {
         Ok(chunk)
     }
 
+    /// discards (pops without freeing stack) current scope.
+    fn discard_scope(&mut self) -> Result<Scope<'s>, CompilerError> {
+        // we should never be out of stacks, so unwrap is ok here :)
+        Ok(self.scopes.pop().unwrap())
+    }
+
     fn scope(&self) -> &Scope<'s> {
         self.scopes.last().unwrap()
     }
@@ -152,8 +158,8 @@ impl<'s> Compiler<'s> {
                 } = decl;
 
                 let kind = self.infer_type(&initializer)?;
-                self.scope_mut().add_local(&identifier, kind)?;
                 chunk = self.compile_expr(*initializer, chunk)?;
+                self.scope_mut().add_local(&identifier, kind)?;
 
                 Ok(chunk)
             }
@@ -215,14 +221,7 @@ impl<'s> Compiler<'s> {
                 // make a temp value which gets populated by the block value
                 let size = kind
                     .compile_time_size()
-                    .ok_or(|| CompilerError::UnknownSize(kind.clone()));
-
-                if size > 0xFF_FF {
-                    unimplemented!("long push n");
-                }
-
-                chunk.push_op(OpCode::PushN);
-                chunk.push_value((size as u16).to_le_bytes());
+                    .ok_or_else(|| CompilerError::UnknownSize(kind.clone()))?;
 
                 self.push_scope();
 
@@ -230,7 +229,26 @@ impl<'s> Compiler<'s> {
                     chunk = self.compile_statement(stmt, chunk)?;
                 }
 
-                chunk = self.pop_scope(chunk)?;
+                chunk = self.compile_expr(*ret, chunk)?;
+
+                // instead of popping the scope, we use BlockReturn OpCode
+                let scope = self.discard_scope()?;
+
+                // we need to calculate size of the stack so we can free it
+                let mut stack_size = 0;
+                for local in scope.locals {
+                    // stack locals always have known size
+                    stack_size += local.kind.compile_time_size().unwrap();
+                }
+
+                if stack_size > 0xFF_FF {
+                    unimplemented!("large block return");
+                }
+
+                // finally, we can make the BlockReturn opcode using size and stack_size
+                chunk.push_op(OpCode::BlockReturn);
+                chunk.push_value((size as u16).to_le_bytes());
+                chunk.push_value((stack_size as u16).to_le_bytes());
 
                 Ok(chunk)
             }

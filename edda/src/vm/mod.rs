@@ -111,6 +111,16 @@ impl Vm {
                 self.push_slice_from_mem(SCRIPT_MEMORY - offset - size..SCRIPT_MEMORY - offset)
                     .unwrap();
             }
+            OpCode::BlockReturn => {
+                let ret_size = self.chunk_short() as usize;
+                let scope_size = self.chunk_short() as usize;
+
+                // Instead of allocating temp buffer for the return value, we can just use a slice
+                // on self.mem, as this memory will not get mutated.
+                let ret_range = self.sp - ret_size + 1..self.sp + 1;
+                self.pop_bytes(scope_size);
+                self.push_slice_from_mem(ret_range).unwrap();
+            }
             u @ _ => unimplemented!("opcode {:?} is not implemented!", u),
         }
 
@@ -243,15 +253,26 @@ impl Vm {
             });
         }
 
-        // stack grows from the top down, so dst and src are reversed here
-        let (dst, src) = self.mem.split_at_mut(range.start);
+        let (src, dst) = if sp < range.start {
+            // value is contained within stack (local variable)
+            // stack grows from the top down, so dst and src are reversed here
+            let (dst, src) = self.mem.split_at_mut(range.start);
+            let src = &src[0..len];
+            let dst = &mut dst[sp - len + 1..sp + 1];
 
-        let src = &src[0..len];
+            (src, dst)
+        } else {
+            // value is below stack (heap allocated, or return value)
+            let (src, dst) = self.mem.split_at_mut(sp - len + 1);
+            let src = &src[range.start..range.end];
+            let dst = &mut dst[0..len];
 
-        // source will always be above sp when copying from stack
-        // FIXME: what about copying from heap??
-        let dst = &mut dst[sp - len + 1..sp + 1];
+            (src, dst)
+        };
+
         dst.copy_from_slice(src);
+
+        self.sp = sp - len;
 
         Ok(())
     }

@@ -9,6 +9,11 @@ use std::fmt::{Debug, Error, Formatter};
 pub enum OpCode {
     /// Return from current function
     Return = 0x00,
+    /// Return from block expression.
+    /// First, pops A (u16) bytes from the stack as the return value,
+    /// and after that, pops (discards) B (u16) values from the stack,
+    /// and lastly, pushes return value back to stack.
+    BlockReturn = 0x01,
     /// Push constant i32 to stack
     ConstantI32 = 0x10,
     /// Sum two i32s
@@ -40,9 +45,6 @@ pub enum OpCode {
     /// Sets A (u16) bytes at stack offset B (u16) to value at top of stack
     SetLocal = 0x63,
     // reserved: long set
-    /// Pushes N (u16) undefined bytes to stack. Used for creating temp values that can later be
-    /// set using SetLocal
-    PushN = 0x65,
 }
 
 pub struct Chunk {
@@ -78,7 +80,7 @@ impl Debug for Chunk {
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
                 }
-                OpCode::GetLocal => {
+                OpCode::GetLocal | OpCode::SetLocal | OpCode::BlockReturn => {
                     let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
                     ptr += 2;
 
