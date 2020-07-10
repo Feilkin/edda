@@ -19,6 +19,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     f.read_to_string(&mut script)
         .expect("something went wrong reading the file");
 
+    println!("{}", script);
+    println!("-------------------------------");
+
     let tokens = scan(&script)?;
 
     use edda::parser::Parsable;
@@ -32,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-    let compiler = Compiler::new();
+    let mut compiler = Compiler::new();
     let mut chunk = compiler.compile(ast, Chunk::new())?;
 
     println!("{:?}", &chunk);

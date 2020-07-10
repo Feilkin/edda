@@ -125,8 +125,8 @@ impl<'s> Parsable<'s> for FnDecl<'s> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct VarDecl<'s> {
-    identifier: Token<'s>,
-    initializer: Box<Expression<'s>>,
+    pub identifier: Token<'s>,
+    pub initializer: Box<Expression<'s>>,
 }
 
 impl<'s> From<VarDecl<'s>> for Statement<'s> {

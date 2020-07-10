@@ -12,11 +12,21 @@ pub struct TypeError {
     pub expected: Type,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     I32,
     Boolean,
     Function(Vec<Type>, Box<Type>),
+}
+
+impl Type {
+    pub fn compile_time_size(&self) -> Option<usize> {
+        match self {
+            Type::I32 => Some(4),
+            Type::Boolean => Some(1),
+            Type::Function(..) => None,
+        }
+    }
 }
 
 impl Display for Type {
@@ -36,23 +46,5 @@ impl Display for Type {
         };
 
         write!(f, "{}", s)
-    }
-}
-
-pub struct Typer {}
-
-impl Typer {
-    pub fn new() -> Typer {
-        Typer {}
-    }
-
-    pub fn infer_type(&self, expr: &Expression) -> Result<Type, TypeError> {
-        match expr {
-            Expression::Equality(..) | Expression::Comparison(..) => Ok(Type::Boolean),
-            Expression::Literal(..) => Ok(Type::I32),
-            Expression::Addition(..) | Expression::Multiplication(..) => Ok(Type::I32),
-            Expression::Group(inner) => self.infer_type(inner.inner.as_ref()),
-            _ => unimplemented!(),
-        }
     }
 }

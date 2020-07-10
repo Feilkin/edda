@@ -4,6 +4,7 @@ use crate::vm::bytecode::{Chunk, OpCode};
 use crate::vm::errors::OutOfMemory;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Error, Formatter};
+use std::ops::Range;
 
 pub mod bytecode;
 pub mod compiler;
@@ -99,6 +100,18 @@ impl Vm {
                 let val = lhs == rhs;
                 self.push_bytes(&[val as u8]).unwrap();
             }
+            OpCode::PopN => {
+                let size = self.chunk_short() as usize;
+                self.pop_bytes(size);
+            }
+            OpCode::GetLocal => {
+                let size = self.chunk_short() as usize;
+                let offset = self.chunk_short() as usize;
+
+                self.push_slice_from_mem(SCRIPT_MEMORY - offset - size..SCRIPT_MEMORY - offset)
+                    .unwrap();
+            }
+            u @ _ => unimplemented!("opcode {:?} is not implemented!", u),
         }
 
         VmState::Running(self)
@@ -148,6 +161,7 @@ impl Vm {
         value_slice
     }
 
+    /// Pushed bytes to top of stack
     fn push_bytes(&mut self, bytes: &[u8]) -> Result<(), OutOfMemory> {
         let len = bytes.len();
         let sp = self.sp;
@@ -215,5 +229,30 @@ impl Vm {
         let val = u16::from_le_bytes(self.chunk.code[self.ip..self.ip + 2].try_into().unwrap());
         self.ip += 2;
         val
+    }
+
+    /// Pushes bytes indicated by `range` to top of stack
+    fn push_slice_from_mem(&mut self, range: Range<usize>) -> Result<(), OutOfMemory> {
+        let sp = self.sp;
+        let len = range.end - range.start;
+
+        // TODO: check that we don't run into heap??
+        if sp + 1 < len {
+            return Err(OutOfMemory {
+                tried_to_allocate: len,
+            });
+        }
+
+        // stack grows from the top down, so dst and src are reversed here
+        let (dst, src) = self.mem.split_at_mut(range.start);
+
+        let src = &src[0..len];
+
+        // source will always be above sp when copying from stack
+        // FIXME: what about copying from heap??
+        let dst = &mut dst[sp - len + 1..sp + 1];
+        dst.copy_from_slice(src);
+
+        Ok(())
     }
 }

@@ -2,4 +2,9 @@
 let a = 10;
 let b = 3;
 
-return a + b;
+let c = if a < 1 { b } else {
+    let a = 666;
+    a / 3
+};
+
+return a + c;

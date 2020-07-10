@@ -31,6 +31,18 @@ pub enum OpCode {
     Jumb = 0x51,
     /// Conditional relative jump to 16bit offset
     JumpIfFalse = 0x52,
+    /// Pops N (u16) bytes from stack,
+    PopN = 0x60,
+    // reserved: long pop
+    /// Pushes A (u16) bytes from stack offset B (u16) to top of stack
+    GetLocal = 0x62,
+    // reserved: long get
+    /// Sets A (u16) bytes at stack offset B (u16) to value at top of stack
+    SetLocal = 0x63,
+    // reserved: long set
+    /// Pushes N (u16) undefined bytes to stack. Used for creating temp values that can later be
+    /// set using SetLocal
+    PushN = 0x65,
 }
 
 pub struct Chunk {
@@ -66,7 +78,19 @@ impl Debug for Chunk {
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
                 }
-                OpCode::JumpIfFalse | OpCode::Jump | OpCode::Jumb => {
+                OpCode::GetLocal => {
+                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
+                    ptr += 2;
+
+                    writeln!(f, " ]")?;
+                    write!(f, "[      : {:>20}", arg)?;
+                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
+                    ptr += 2;
+
+                    writeln!(f, " ]")?;
+                    write!(f, "[      : {:>20}", arg)?;
+                }
+                OpCode::JumpIfFalse | OpCode::Jump | OpCode::Jumb | OpCode::PopN => {
                     let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
                     ptr += 2;
 

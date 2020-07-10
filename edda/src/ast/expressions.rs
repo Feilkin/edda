@@ -398,7 +398,7 @@ impl<'s> Parsable<'s> for Literal<'s> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Variable<'s>(Token<'s>);
+pub struct Variable<'s>(pub Token<'s>);
 
 impl<'s> Variable<'s> {
     pub fn token(&self) -> &Token<'s> {
