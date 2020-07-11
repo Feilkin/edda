@@ -1,6 +1,7 @@
 //! Statement AST nodes.
 //! Statements don't evaluate to values.
 
+use crate::ast::expressions::BlockExpr;
 use crate::parser::{semicolon, Parsable, ParseError, ParseResult};
 use crate::token::{Token, TokenType};
 use crate::Expression;
@@ -15,6 +16,8 @@ pub enum Statement<'s> {
     Fn(FnDecl<'s>),
     /// Variable declaration.
     VarDecl(VarDecl<'s>),
+    /// Block Statement
+    Block(BlockStmt<'s>),
 }
 
 impl<'s> Parsable<'s> for Statement<'s> {
@@ -62,10 +65,10 @@ impl<'s> Parsable<'s> for ReturnStmt<'s> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FnDecl<'s> {
-    name: Token<'s>,
-    params: Vec<Token<'s>>,
-    body: Box<Expression<'s>>,
-    ret_type: Token<'s>,
+    pub name: Token<'s>,
+    pub params: Vec<Token<'s>>,
+    pub body: Box<Expression<'s>>,
+    pub ret_type: Token<'s>,
 }
 
 impl<'s> From<FnDecl<'s>> for Statement<'s> {
@@ -108,14 +111,14 @@ impl<'s> Parsable<'s> for FnDecl<'s> {
         let (ret_type, tail) = match_tokens!(tail, TokenType::Identifier)?;
 
         // TODO: this should actually be BlockExpression, I think?
-        let (body, tail) = Expression::try_parse(tail)?;
+        let (body, tail) = BlockExpr::try_parse(tail)?;
 
         Ok((
             FnDecl {
                 name,
                 params,
                 ret_type,
-                body: Box::new(body),
+                body: Box::new(body.into()),
             }
             .into(),
             tail,
@@ -155,5 +158,44 @@ impl<'s> Parsable<'s> for VarDecl<'s> {
             .into(),
             tail,
         ))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct BlockStmt<'s> {
+    pub statements: Vec<Statement<'s>>,
+}
+
+impl<'s> BlockStmt<'s> {
+    pub fn new(statements: Vec<Statement<'s>>) -> BlockStmt<'s> {
+        BlockStmt { statements }
+    }
+}
+
+impl<'s> From<BlockStmt<'s>> for Statement<'s> {
+    fn from(e: BlockStmt<'s>) -> Self {
+        Statement::Block(e)
+    }
+}
+
+impl<'s> Parsable<'s> for BlockStmt<'s> {
+    type Node = Statement<'s>;
+
+    fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
+        let (_, mut tail) = match_tokens!(tokens, TokenType::LeftBrace)?;
+
+        let mut statements = Vec::new();
+
+        while !peek_tokens!(tail, TokenType::RightBrace) {
+            // because we can't tell expression from statement before we actually try parsing it,
+            // we have to do this stupid try match thing
+            let (stmt, new_tail) = Statement::try_parse(tail)?;
+            tail = new_tail;
+            statements.push(stmt);
+        }
+
+        let (_, tail) = match_tokens!(tail, TokenType::RightBrace)?;
+
+        Ok((BlockStmt::new(statements).into(), tail))
     }
 }

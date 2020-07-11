@@ -1,8 +1,13 @@
 //! Bytecode definitions
 
+use crate::token::Token;
+use crate::typer::Type;
+use crate::vm::compiler::CompilerError;
+use crate::vm::function::Function;
 use derive_try_from_primitive::TryFromPrimitive;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Error, Formatter};
+use std::rc::Rc;
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -16,6 +21,9 @@ pub enum OpCode {
     BlockReturn = 0x01,
     /// Push constant i32 to stack
     ConstantI32 = 0x10,
+    // reserved: u32
+    /// Push constant u16 to stack,
+    ConstantU16 = 0x12,
     /// Sum two i32s
     AddI32 = 0x30,
     /// Subtract two i32's
@@ -45,14 +53,22 @@ pub enum OpCode {
     /// Sets A (u16) bytes at stack offset B (u16) to value at top of stack
     SetLocal = 0x63,
     // reserved: long set
+    /// Pop (u16) function index from stack and call it.
+    /// Stack should contain arguments for the function call. Since signature of function is known
+    /// at compile time, we already know the argument size, so it does not need to transferred
+    /// through stack.
+    Call = 0x70,
 }
 
 pub struct Chunk {
     pub code: Vec<u8>,
+    pub functions: Vec<Rc<Function>>,
+    pub parent: Option<Box<Chunk>>,
 }
 
 impl Debug for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        writeln!(f, "[         ~ Chunk ~           ]")?;
         writeln!(f, "[ Addr | Op                   ]")?;
         let mut ptr = 0;
 
@@ -72,10 +88,22 @@ impl Debug for Chunk {
                 | OpCode::DivI32
                 | OpCode::LessEqualI32
                 | OpCode::LessI32
-                | OpCode::EqualI32 => (),
+                | OpCode::EqualI32
+                | OpCode::Call => (),
                 OpCode::ConstantI32 => {
                     let arg = i32::from_le_bytes(self.code[ptr..ptr + 4].try_into().unwrap());
                     ptr += 4;
+
+                    writeln!(f, " ]")?;
+                    write!(f, "[      : {:>20}", arg)?;
+                }
+                OpCode::JumpIfFalse
+                | OpCode::Jump
+                | OpCode::Jumb
+                | OpCode::PopN
+                | OpCode::ConstantU16 => {
+                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
+                    ptr += 2;
 
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
@@ -92,16 +120,14 @@ impl Debug for Chunk {
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
                 }
-                OpCode::JumpIfFalse | OpCode::Jump | OpCode::Jumb | OpCode::PopN => {
-                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
-                    ptr += 2;
-
-                    writeln!(f, " ]")?;
-                    write!(f, "[      : {:>20}", arg)?;
-                }
             }
 
             writeln!(f, " ]")?;
+        }
+
+        for func in &self.functions {
+            writeln!(f, "[ {:^27} ]", format!("~ {} ~", func.name))?;
+            writeln!(f, "{:?}", func.chunk)?;
         }
 
         Ok(())
@@ -110,7 +136,19 @@ impl Debug for Chunk {
 
 impl Chunk {
     pub fn new() -> Chunk {
-        Chunk { code: Vec::new() }
+        Chunk {
+            code: Vec::new(),
+            functions: Vec::new(),
+            parent: None,
+        }
+    }
+
+    pub fn with_parent(parent: Box<Chunk>) -> Chunk {
+        Chunk {
+            code: Vec::new(),
+            functions: vec![],
+            parent: Some(parent),
+        }
     }
 
     pub fn push_op(&mut self, op: OpCode) {
@@ -133,5 +171,44 @@ impl Chunk {
     /// Returns next offset as u16
     pub fn head_short(&self) -> u16 {
         self.head() as u16
+    }
+
+    pub fn resolve_function<'s>(
+        &self,
+        identifier: &Token<'s>,
+    ) -> Result<(usize, Rc<Function>), CompilerError> {
+        self.functions
+            .iter()
+            .enumerate()
+            .find(|(i, f)| &f.name == identifier.text)
+            .and_then(|(i, f)| Some((i, Rc::clone(f))))
+            .or_else(|| {
+                self.parent
+                    .as_ref()
+                    .and_then(|p| p.resolve_function(identifier).ok())
+            })
+            .ok_or_else(|| CompilerError::UnrecognizedVariable(identifier.text.to_owned()))
+    }
+
+    /// Declares new (static) function
+    /// and returns it's index in this chunks function vector
+    pub fn declare_function<'s>(
+        &mut self,
+        identifier: &Token<'s>,
+        signature: (Vec<Type>, Type),
+    ) -> Result<usize, CompilerError> {
+        if self.resolve_function(identifier).is_ok() {
+            return Err(CompilerError::FuncAlreadyDeclared(
+                identifier.text.to_owned(),
+            ));
+        }
+
+        self.functions.push(Rc::new(Function {
+            name: identifier.text.to_owned(),
+            chunk: Chunk::new().into(),
+            signature: signature,
+        }));
+
+        Ok(self.functions.len() - 1)
     }
 }

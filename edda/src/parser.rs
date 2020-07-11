@@ -2,9 +2,10 @@
 
 use std::fmt::{Error as FmtError, Write};
 
-use crate::ast::statements::Statement;
+use crate::ast::expressions::BlockExpr;
+use crate::ast::statements::{ReturnStmt, Statement};
 use crate::token::{Token, TokenType};
-use crate::Error;
+use crate::{Error, Expression};
 use itertools::Itertools;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -189,7 +190,7 @@ pub fn semicolon<'a, 's>(
     }
 }
 
-pub fn script<'a, 's>(source: &'a [Token<'s>]) -> ParseResult<'s, 'a, Vec<Statement<'s>>> {
+pub fn script<'a, 's>(source: &'a [Token<'s>]) -> ParseResult<'s, 'a, BlockExpr<'s>> {
     let mut tail = source;
     let mut statements = Vec::new();
 
@@ -200,5 +201,14 @@ pub fn script<'a, 's>(source: &'a [Token<'s>]) -> ParseResult<'s, 'a, Vec<Statem
         statements.push(stmt);
     }
 
-    Ok((statements, tail))
+    let (expr, pop) = match statements.last_mut().unwrap() {
+        Statement::Return(ReturnStmt { value }) => (*value.take().unwrap(), true),
+        _ => (Expression::Nil, false),
+    };
+
+    if pop {
+        statements.pop();
+    }
+
+    Ok((BlockExpr::new(statements, expr), tail))
 }

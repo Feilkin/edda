@@ -36,9 +36,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     let mut compiler = Compiler::new();
-    let mut chunk = compiler.compile(ast, Chunk::new())?;
+    let mut script = compiler.compile(ast)?;
 
-    println!("{:?}", &chunk);
+    println!("{:?}", &script.chunk);
 
     let mut vm = Vm::new(chunk);
     println!("{:?}", &vm);
