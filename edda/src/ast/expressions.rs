@@ -14,13 +14,11 @@ pub enum Expression<'s> {
     Comparison(Comparison<'s>),
     Addition(Addition<'s>),
     Multiplication(Multiplication<'s>),
-    Call(CallExpr<'s>),
+    Call(Call<'s>),
     Literal(Literal<'s>),
     Variable(Variable<'s>),
     Group(Grouping<'s>),
     Block(BlockExpr<'s>),
-    /// Expression that evaluates to no value
-    Nil,
 }
 
 impl<'s> Parsable<'s> for Expression<'s> {
@@ -203,12 +201,12 @@ impl<'s> Parsable<'s> for Multiplication<'s> {
     type Node = Expression<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
-        let (mut expr, mut tail) = CallExpr::try_parse(tokens)?;
+        let (mut expr, mut tail) = Call::try_parse(tokens)?;
 
         while peek_tokens!(tail, TokenType::Star, TokenType::Slash) {
             let (first, new_tail) = tail.split_first().expect("ran out of tokens when parsing");
             let operator = first.clone();
-            let (rhs, new_tail) = CallExpr::try_parse(new_tail)?;
+            let (rhs, new_tail) = Call::try_parse(new_tail)?;
 
             expr = Multiplication(Binary::new(expr, operator, rhs)).into();
 
@@ -220,18 +218,18 @@ impl<'s> Parsable<'s> for Multiplication<'s> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct CallExpr<'s> {
-    pub callee: Box<Expression<'s>>,
-    pub arguments: Vec<Expression<'s>>,
+pub struct Call<'s> {
+    callee: Box<Expression<'s>>,
+    arguments: Vec<Expression<'s>>,
 }
 
-impl<'s> From<CallExpr<'s>> for Expression<'s> {
-    fn from(expr: CallExpr<'s>) -> Self {
+impl<'s> From<Call<'s>> for Expression<'s> {
+    fn from(expr: Call<'s>) -> Self {
         Expression::Call(expr)
     }
 }
 
-impl<'s> Parsable<'s> for CallExpr<'s> {
+impl<'s> Parsable<'s> for Call<'s> {
     type Node = Expression<'s>;
 
     fn try_parse<'a>(tokens: &'a [Token<'s>]) -> ParseResult<'s, 'a, Self::Node> {
@@ -260,7 +258,7 @@ impl<'s> Parsable<'s> for CallExpr<'s> {
             let (_, new_tail) = match_tokens!(tail, TokenType::RightParen)?;
             tail = new_tail;
 
-            expr = CallExpr {
+            expr = Call {
                 callee: Box::new(expr),
                 arguments,
             }

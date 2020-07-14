@@ -1,10 +1,7 @@
 //! Standard VM
 
-use crate::typer::{AsEddaType, FromStack};
 use crate::vm::bytecode::{Chunk, OpCode};
 use crate::vm::errors::OutOfMemory;
-use crate::vm::function::{Frame, Script};
-use itertools::Either;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Error, Formatter};
 use std::ops::Range;
@@ -16,50 +13,41 @@ mod function;
 
 const SCRIPT_MEMORY: usize = 256;
 
-pub enum VmState<T: AsEddaType + FromStack> {
-    Running(Vm<T>),
-    Finished(T),
+// quick hack lol
+pub enum VmState {
+    Running(Vm),
+    Finished(i32),
 }
 
-pub struct Vm<T: AsEddaType + FromStack> {
+pub struct Vm {
+    chunk: Chunk,
     mem: [u8; SCRIPT_MEMORY],
     /// Points to next empty memory location in stack
     sp: usize,
-    frames: Vec<Frame<T>>,
-    current_frame: usize,
+    ip: usize,
 }
 
 // public methods
-impl<T: AsEddaType + FromStack> Vm<T> {
-    pub fn new(script: Script<T>) -> Vm<T> {
-        let sp = SCRIPT_MEMORY - 1;
-
-        let root_frame = Frame {
-            function: Either::Right(script),
-            ip: 0,
-            stack: sp,
-        };
-
+impl Vm {
+    pub fn new(chunk: Chunk) -> Vm {
         Vm {
-            frames: vec![root_frame],
+            chunk,
             mem: [0; SCRIPT_MEMORY],
-            sp,
-            current_frame: 0,
+            sp: SCRIPT_MEMORY - 1,
+            ip: 0,
         }
     }
 
-    pub fn run(mut self) -> VmState<T> {
+    pub fn run(mut self) -> VmState {
         let op = self.next_op();
 
         match op {
             OpCode::Return => {
-                return VmState::Finished(T::pop(&mut self));
+                let ret = i32::from_le_bytes(self.pop_bytes(4).unwrap().try_into().unwrap());
+                return VmState::Finished(ret);
             }
             OpCode::ConstantI32 => {
                 self.load_bytes(4);
-            }
-            OpCode::ConstantU16 => {
-                self.load_bytes(2);
             }
             OpCode::AddI32 => {
                 let (rhs, lhs) = self.pop_i32_2().unwrap();
@@ -83,18 +71,18 @@ impl<T: AsEddaType + FromStack> Vm<T> {
             }
             OpCode::Jump => {
                 let offset = self.chunk_short();
-                self.advance_ip(offset as usize - 2);
+                self.ip += offset as usize - 2;
             }
             OpCode::Jumb => {
                 let offset = self.chunk_short();
-                self.advance_ip(offset as usize + 2);
+                self.ip -= offset as usize + 2;
             }
             OpCode::JumpIfFalse => {
                 let offset = self.chunk_short();
                 let cond = self.pop_bytes(1).unwrap();
 
                 if cond[0] == 0 {
-                    self.advance_ip(offset as usize - 2);
+                    self.ip += offset as usize - 2;
                 }
             }
             OpCode::LessI32 => {
@@ -140,65 +128,47 @@ impl<T: AsEddaType + FromStack> Vm<T> {
     }
 }
 
-//impl<T: AsEddaType + FromStack> Debug for Vm<T> {
-//    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-//        let op = OpCode::try_from(self.chunk.code[self.ip].try_into().unwrap()).unwrap();
-//
-//        // TODO: Stack printing is only possible when exact type of all variables inside stack are
-//        //       known. For now, we only support i32 so it shouldn't be a problem :) gl future me
-//
-//        //        let mut stack = Vec::new();
-//        //
-//        //        for i in (self.sp + 1..SCRIPT_MEMORY - 1).step_by(4) {
-//        //            let val = i32::from_le_bytes(self.mem[i..i + 4].try_into().unwrap());
-//        //            stack.push(val);
-//        //        }
-//        //
-//        //        let stack_repr = stack
-//        //            .iter()
-//        //            .rev()
-//        //            .fold(String::new(), |a, b| format!("{} {}", a, b));
-//
-//        write!(
-//            f,
-//            "Vm {{ ip: {}, sp: {}, current op: {:?} }}",
-//            self.ip,
-//            self.sp,
-//            op, //stack_repr
-//        )
-//    }
-//}
+impl Debug for Vm {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        let op = OpCode::try_from(self.chunk.code[self.ip].try_into().unwrap()).unwrap();
+
+        // TODO: Stack printing is only possible when exact type of all variables inside stack are
+        //       known. For now, we only support i32 so it shouldn't be a problem :) gl future me
+
+        //        let mut stack = Vec::new();
+        //
+        //        for i in (self.sp + 1..SCRIPT_MEMORY - 1).step_by(4) {
+        //            let val = i32::from_le_bytes(self.mem[i..i + 4].try_into().unwrap());
+        //            stack.push(val);
+        //        }
+        //
+        //        let stack_repr = stack
+        //            .iter()
+        //            .rev()
+        //            .fold(String::new(), |a, b| format!("{} {}", a, b));
+
+        write!(
+            f,
+            "Vm {{ ip: {}, sp: {}, current op: {:?} }}",
+            self.ip,
+            self.sp,
+            op, //stack_repr
+        )
+    }
+}
 
 // private methods
-impl<T: AsEddaType + FromStack> Vm<T> {
-    fn frame(&self) -> &Frame<T> {
-        &self.frames[self.current_frame]
-    }
-
-    fn frame_mut(&mut self) -> &mut Frame<T> {
-        &mut self.frames[self.current_frame]
-    }
-
-    fn advance_ip(&mut self, amount: usize) {
-        self.frame_mut().advance_ip(amount)
-    }
-
-    fn retreat_ip(&mut self, amount: usize) {
-        self.frame_mut().retreat_ip(amount)
-    }
-
-    fn ip(&self) -> usize {
-        self.frame().ip()
-    }
-
+impl Vm {
     fn next_op(&mut self) -> OpCode {
-        let op = self.frame().op_code();
-        self.advance_ip(1);
+        let op = OpCode::try_from(self.chunk.code[self.ip]).unwrap();
+        self.ip += 1;
         op
     }
 
     fn next_bytes(&mut self, len: usize) -> &[u8] {
-        self.frame_mut().next_bytes(len)
+        let value_slice = &self.chunk.code[self.ip..self.ip + len];
+        self.ip += len;
+        value_slice
     }
 
     /// Pushed bytes to top of stack
@@ -220,7 +190,7 @@ impl<T: AsEddaType + FromStack> Vm<T> {
         Ok(())
     }
 
-    pub fn pop_bytes(&mut self, len: usize) -> Result<&[u8], OutOfMemory> {
+    fn pop_bytes(&mut self, len: usize) -> Result<&[u8], OutOfMemory> {
         if self.sp + len >= SCRIPT_MEMORY {
             return Err(OutOfMemory {
                 tried_to_allocate: len,
@@ -255,7 +225,8 @@ impl<T: AsEddaType + FromStack> Vm<T> {
             });
         }
 
-        let src = self.next_bytes(len);
+        let src = &self.chunk.code[self.ip..self.ip + len];
+        self.ip += len;
 
         let mut destination = &mut self.mem[sp - len + 1..sp + 1];
         destination.copy_from_slice(src);
@@ -265,7 +236,9 @@ impl<T: AsEddaType + FromStack> Vm<T> {
     }
 
     fn chunk_short(&mut self) -> u16 {
-        u16::from_le_bytes(self.next_bytes(2).try_into().unwrap())
+        let val = u16::from_le_bytes(self.chunk.code[self.ip..self.ip + 2].try_into().unwrap());
+        self.ip += 2;
+        val
     }
 
     /// Pushes bytes indicated by `range` to top of stack
