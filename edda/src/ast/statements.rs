@@ -62,10 +62,10 @@ impl<'s> Parsable<'s> for ReturnStmt<'s> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FnDecl<'s> {
-    name: Token<'s>,
-    params: Vec<Token<'s>>,
-    body: Box<Expression<'s>>,
-    ret_type: Token<'s>,
+    pub name: Token<'s>,
+    pub params: Vec<(Token<'s>, Token<'s>)>,
+    pub body: Box<Expression<'s>>,
+    pub ret_type: Token<'s>,
 }
 
 impl<'s> From<FnDecl<'s>> for Statement<'s> {
@@ -87,10 +87,12 @@ impl<'s> Parsable<'s> for FnDecl<'s> {
 
         // TODO: types
         while peek_tokens!(tail, TokenType::Identifier) {
-            let (token, new_tail) = match_tokens!(tail, TokenType::Identifier)?;
+            let (id, new_tail) = match_tokens!(tail, TokenType::Identifier)?;
+            let (_, new_tail) = match_tokens!(new_tail, TokenType::Colon)?;
+            let (kind, new_tail) = match_tokens!(new_tail, TokenType::Identifier)?;
             tail = new_tail;
 
-            params.push(token);
+            params.push((id, kind));
 
             // if next is ), break, else consume a ,
             // maybe not the best way to achieve (p1, p2, ..., pN) parsing

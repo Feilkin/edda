@@ -8,8 +8,8 @@ use crate::{Chunk, Expression};
 /// Keeps track of each call to this function in the code, so the calls can be replaced with
 /// actual address to the function.
 pub struct FunctionDeclaration<'s> {
-    name: Token<'s>,
-    signature: (Vec<Type>, Type),
-    body: Box<Expression<'s>>,
-    call_sites: Vec<usize>,
+    pub name: Token<'s>,
+    pub signature: (Vec<Type>, Type),
+    pub body: Box<Expression<'s>>,
+    pub references: Vec<usize>,
 }

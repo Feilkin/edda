@@ -241,6 +241,7 @@ pub fn scan(source: &str) -> ScanResult {
                     Star, StarEqual       = '*', '='
                     Less, LessEqual       = '<', '='
                     Greater, GreaterEqual = '>', '='
+                    Colon, SuperColon     = ':', ':'
                 ]
 
                 trie_or [

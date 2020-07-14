@@ -2,13 +2,14 @@
 
 use thiserror::Error as ThisError;
 
-use crate::ast::expressions::{Addition, Binary, BlockExpr, Expression, Grouping};
-use crate::ast::statements::{Statement, VarDecl};
+use crate::ast::expressions::{Addition, Binary, BlockExpr, CallExpr, Expression, Grouping};
+use crate::ast::statements::{FnDecl, Statement, VarDecl};
 use crate::token::{Token, TokenType};
 use crate::typer::{Type, TypeError};
 use crate::vm::bytecode::{Chunk, OpCode};
 use crate::vm::function::FunctionDeclaration;
 use crate::Error;
+use std::collections::HashMap;
 
 #[derive(ThisError, Debug)]
 pub enum CompilerError {
@@ -20,6 +21,8 @@ pub enum CompilerError {
     UnknownSize(Type),
     #[error("could not resolve {0} to local variable")]
     UnrecognizedVariable(String),
+    #[error("could not resolve {0} to a type")]
+    UnrecognizedType(String),
 }
 
 impl From<CompilerError> for Error {
@@ -95,6 +98,8 @@ pub struct Compiler<'s> {
     chunk: Chunk,
     /// Collection of function declarations
     functions: Vec<FunctionDeclaration<'s>>,
+    /// Mapping of type names to types
+    types: HashMap<String, Type>,
 }
 
 impl<'s> Compiler<'s> {
@@ -103,6 +108,10 @@ impl<'s> Compiler<'s> {
             scopes: vec![Scope::new(0)],
             chunk: Chunk::new(),
             functions: Vec::new(),
+            types: [("i32", Type::I32), ("bool", Type::Boolean)]
+                .iter()
+                .map(|(id, t)| ((*id).to_owned(), t.clone()))
+                .collect(),
         }
     }
 
@@ -128,6 +137,8 @@ impl<'s> Compiler<'s> {
             chunk.push_value((size as u16).to_le_bytes());
         }
 
+        self.functions.extend(functions);
+
         Ok(chunk)
     }
 
@@ -147,7 +158,8 @@ impl<'s> Compiler<'s> {
 
     fn resolve_local(&self, identifier: Token<'s>) -> Result<(&Type, usize), CompilerError> {
         for scope in self.scopes.iter().rev() {
-            for local in &scope.locals {
+            // use reversed iterator of locals because we allow in-scope shadowing
+            for local in scope.locals.iter().rev() {
                 if local.name.text == identifier.text {
                     return Ok((&local.kind, local.offset));
                 }
@@ -166,6 +178,7 @@ impl<'s> Compiler<'s> {
         }
 
         // compile functions
+        for func in self.functions {}
 
         Ok(chunk)
     }
@@ -189,6 +202,34 @@ impl<'s> Compiler<'s> {
                 let kind = self.infer_type(&initializer)?;
                 chunk = self.compile_expr(*initializer, chunk)?;
                 self.scope_mut().add_local(&identifier, kind)?;
+
+                Ok(chunk)
+            }
+            Statement::Fn(FnDecl {
+                name,
+                params,
+                body,
+                ret_type,
+            }) => {
+                let (param_types, errs): (Vec<_>, Vec<_>) = params
+                    .iter()
+                    .map(|(_, k)| self.resolve_type(k))
+                    .partition(Result::is_ok);
+
+                if !errs.is_empty() {
+                    // TODO: return multiple errors
+                    return Err(errs.into_iter().map(Result::unwrap_err).next().unwrap());
+                }
+
+                let param_types = param_types.into_iter().map(Result::unwrap).collect();
+                let ret_type = self.resolve_type(&ret_type)?;
+
+                self.scope_mut().add_function(FunctionDeclaration {
+                    name,
+                    signature: (param_types, ret_type),
+                    body,
+                    references: vec![],
+                });
 
                 Ok(chunk)
             }
@@ -376,6 +417,51 @@ impl<'s> Compiler<'s> {
 
                 Ok(chunk)
             }
+            Expression::Call(CallExpr { callee, arguments }) => {
+                // When performing a call, stack should look like this
+                // ...
+                // | arg 1
+                // | arg 2
+                // | ... arg N
+                // | callable
+                //
+                // so we must compile arguments before we compile the callee.
+                // This has an interesting side effect when compiling something like this:
+                // ```edda
+                // fn foo(a: ()) -> () {}
+                // fn bar(a: ()) -> () {}
+                //
+                // let mut ptr = foo;
+                //
+                // ptr({ ptr = bar: () });
+                // ```
+                //
+                // Since argument expressions are executed before the callee expression,
+                // `ptr` will actually have a reference to bar, instead of foo.
+                // This might be confusing behaviour, but I'm not sure whats the best way to fix
+                // this.
+
+                let (arg_types) = match self.infer_type(callee.as_ref()) {
+                    Ok(Type::Function(arg_types, ..)) => Ok(arg_types),
+                    Ok(other) => Err(TypeError {
+                        err: other,
+                        // TODO: the actual expected type could be inferred from context, but
+                        //       im being lazy right now
+                        expected: Type::Function(vec![Type::Any], Box::new(Type::Any)),
+                    }
+                    .into()),
+                    Err(err) => Err(err),
+                }?;
+
+                for arg in arguments {
+                    chunk = self.compile_expr(arg, chunk)?;
+                }
+
+                chunk = self.compile_expr(*callee, chunk)?;
+                chunk.push_op(OpCode::Call);
+
+                Ok(chunk)
+            }
             expr @ _ => unimplemented!("expression {:?} is not implemented yet", expr),
         }
     }
@@ -393,5 +479,18 @@ impl<'s> Compiler<'s> {
             Expression::Block(block) => self.infer_type(block.ret.as_ref()),
             e @ _ => unimplemented!("inference for {:?}", e),
         }
+    }
+
+    /// Resolves identifier token into a type, if possible
+    pub fn resolve_type(&self, token: &Token<'s>) -> Result<Type, CompilerError> {
+        let identifier = match token.t_type {
+            TokenType::Identifier => token.text,
+            _ => panic!("Attempted to resolve invalid token to type: {}", token),
+        };
+
+        self.types
+            .get(identifier)
+            .and_then(|t| Some(t.clone()))
+            .ok_or(CompilerError::UnrecognizedType(identifier.to_owned()))
     }
 }

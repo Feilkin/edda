@@ -26,6 +26,8 @@ pub enum TokenType {
     Comma,
     Dot,
     DotDot,
+    Colon,
+    SuperColon,
     Semicolon,
     Plus,
     Minus,

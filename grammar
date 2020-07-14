@@ -8,6 +8,7 @@ RightBrace    = }
 Comma         = ,
 Dot           = .
 DotDot        = ..
+Colon         = :
 Semicolon     = ;
 Plus          = +
 Minus         = -
@@ -54,6 +55,7 @@ declaration     = varDeclaration
                 | globDeclaration
                 | statement ;
 varDeclaration  = Let Identifier (Equal expression)? Semicolon ;
+fnDeclaration   = Fn Identifier LeftParen (Identifier Colon Identifier (Comma Identifier Colon Identifier)*)? RightParen
 globDeclaration = Let Global Identifier Equal expression Semicolon ;
 statement       = exprStatement
                 | returnStatement

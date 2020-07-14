@@ -16,7 +16,10 @@ pub struct TypeError {
 pub enum Type {
     I32,
     Boolean,
+    /// Function reference
     Function(Vec<Type>, Box<Type>),
+    /// Pseudotype that is used when no concrete type is not yet needed
+    Any,
 }
 
 impl Type {
@@ -25,6 +28,7 @@ impl Type {
             Type::I32 => Some(4),
             Type::Boolean => Some(1),
             Type::Function(..) => None,
+            Type::Any => None,
         }
     }
 }
@@ -43,6 +47,7 @@ impl Display for Type {
                     .join(", "),
                 ret
             ),
+            Type::Any => "<any>".to_owned(),
         };
 
         write!(f, "{}", s)
