@@ -7,6 +7,7 @@ use crate::ast::statements::{Statement, VarDecl};
 use crate::token::{Token, TokenType};
 use crate::typer::{Type, TypeError};
 use crate::vm::bytecode::{Chunk, OpCode};
+use crate::vm::function::FunctionDeclaration;
 use crate::Error;
 
 #[derive(ThisError, Debug)]
@@ -36,16 +37,26 @@ pub struct Local<'s> {
 }
 
 pub struct Scope<'s> {
-    pub locals: Vec<Local<'s>>,
-    pub head: usize,
+    locals: Vec<Local<'s>>,
+    functions: Vec<FunctionDeclaration<'s>>,
+    head: usize,
 }
 
+/// Lexical scope of current block.
+/// Because it contains uncompiled function declarations, it must be used.
+#[must_use]
 impl<'s> Scope<'s> {
     pub fn new(head: usize) -> Scope<'s> {
         Scope {
             locals: Vec::new(),
+            functions: Vec::new(),
             head,
         }
+    }
+
+    /// Returns pointer to start of this scope at the stack
+    pub fn head(&self) -> usize {
+        self.head
     }
 
     fn add_local(&mut self, identifier: &Token<'s>, kind: Type) -> Result<(), CompilerError> {
@@ -67,28 +78,43 @@ impl<'s> Scope<'s> {
 
         Ok(())
     }
+
+    /// Adds function declaration to current scope.
+    fn add_function(&mut self, function: FunctionDeclaration<'s>) {
+        self.functions.push(function)
+    }
+
+    /// Consumes this scope, returning list of function declarations that need to be compiled.
+    fn finish(self) -> (Vec<Local<'s>>, Vec<FunctionDeclaration<'s>>) {
+        (self.locals, self.functions)
+    }
 }
 
 pub struct Compiler<'s> {
     scopes: Vec<Scope<'s>>,
+    chunk: Chunk,
+    /// Collection of function declarations
+    functions: Vec<FunctionDeclaration<'s>>,
 }
 
 impl<'s> Compiler<'s> {
     pub fn new() -> Compiler<'s> {
         Compiler {
             scopes: vec![Scope::new(0)],
+            chunk: Chunk::new(),
+            functions: Vec::new(),
         }
     }
 
     fn push_scope(&mut self) {
-        self.scopes.push(Scope::new(self.scope().head));
+        self.scopes.push(Scope::new(self.scope().head()));
     }
 
     fn pop_scope(&mut self, mut chunk: Chunk) -> Result<Chunk, CompilerError> {
-        let popped = self.scopes.pop().unwrap();
+        let (locals, functions) = self.scopes.pop().unwrap().finish();
 
-        for local in popped.locals {
-            chunk.push_op(OpCode::PopN);
+        for local in locals {
+            self.chunk.push_op(OpCode::PopN);
             let size = local
                 .kind
                 .compile_time_size()
@@ -133,10 +159,13 @@ impl<'s> Compiler<'s> {
         ))
     }
 
-    pub fn compile(&mut self, script: Vec<Statement<'s>>, mut chunk: Chunk) -> CompilerResult {
+    pub fn compile(mut self, script: Vec<Statement<'s>>, mut chunk: Chunk) -> CompilerResult {
+        // compile statements
         for stmt in script {
             chunk = self.compile_statement(stmt, chunk)?;
         }
+
+        // compile functions
 
         Ok(chunk)
     }
