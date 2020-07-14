@@ -47,6 +47,9 @@ pub enum OpCode {
     // reserved: long set
     /// Call function :)
     Call = 0x70,
+    /// Load function offset to stack. This is just u16 constant, but we have separate opcode for it
+    /// for future debugging needs.
+    LoadFunction = 0x12,
 }
 
 pub struct Chunk {
@@ -67,6 +70,18 @@ impl Debug for Chunk {
             write!(f, "{:<20}", format!("{:?}", op))?;
 
             match op {
+                OpCode::JumpIfFalse
+                | OpCode::Jump
+                | OpCode::Jumb
+                | OpCode::PopN
+                | OpCode::Call
+                | OpCode::LoadFunction => {
+                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
+                    ptr += 2;
+
+                    writeln!(f, " ]")?;
+                    write!(f, "[      : {:>20}", arg)?;
+                }
                 OpCode::Return
                 | OpCode::AddI32
                 | OpCode::SubI32
@@ -88,13 +103,6 @@ impl Debug for Chunk {
 
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
-                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
-                    ptr += 2;
-
-                    writeln!(f, " ]")?;
-                    write!(f, "[      : {:>20}", arg)?;
-                }
-                OpCode::JumpIfFalse | OpCode::Jump | OpCode::Jumb | OpCode::PopN | OpCode::Call => {
                     let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
                     ptr += 2;
 

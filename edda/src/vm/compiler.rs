@@ -7,13 +7,17 @@ use crate::ast::statements::{FnDecl, Statement, VarDecl};
 use crate::token::{Token, TokenType};
 use crate::typer::{Type, TypeError};
 use crate::vm::bytecode::{Chunk, OpCode};
+use crate::vm::compiler::Local::FnReference;
 use crate::vm::function::FunctionDeclaration;
 use crate::Error;
+use std::borrow::Borrow;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(ThisError, Debug)]
 pub enum CompilerError {
-    #[error("compile error: {0}")]
+    #[error(transparent)]
     TypeError(#[from] TypeError),
     #[error("too many locals")]
     TooManyLocals,
@@ -23,6 +27,8 @@ pub enum CompilerError {
     UnrecognizedVariable(String),
     #[error("could not resolve {0} to a type")]
     UnrecognizedType(String),
+    #[error("wrong number of arguments passed to {0}, expected {1}, {2} given")]
+    MismatchedArity(String, usize, usize),
 }
 
 impl From<CompilerError> for Error {
@@ -33,27 +39,84 @@ impl From<CompilerError> for Error {
 
 type CompilerResult = Result<Chunk, CompilerError>;
 
-pub struct Local<'s> {
+pub enum Local<'s> {
+    Stacked(StackAllocated<'s>),
+    FnReference(Rc<RefCell<FunctionDeclaration<'s>>>),
+}
+
+impl<'s> Local<'s> {
+    pub fn name(&self) -> &str {
+        match self {
+            Local::Stacked(StackAllocated { name, .. }) => name.text,
+            Local::FnReference(fn_ref) => {
+                let fn_ref: &RefCell<FunctionDeclaration> = fn_ref.borrow();
+                fn_ref.borrow().name.text
+            }
+        }
+    }
+
+    pub fn compile_time_size(&self) -> usize {
+        match self {
+            Local::Stacked(StackAllocated { kind, .. }) => kind.compile_time_size().unwrap(),
+            Local::FnReference(..) => 2,
+        }
+    }
+
+    pub fn kind(&self) -> Type {
+        match self {
+            Local::Stacked(StackAllocated { kind, .. }) => kind.clone(),
+            Local::FnReference(fn_decl) => {
+                let fn_ref: &RefCell<FunctionDeclaration> = fn_decl.borrow();
+                let fn_ref = fn_ref.borrow();
+
+                Type::Function(
+                    fn_ref.signature.0.clone(),
+                    Box::from(fn_ref.signature.1.clone()),
+                )
+            }
+        }
+    }
+}
+
+pub struct StackAllocated<'s> {
     pub name: Token<'s>,
     pub kind: Type,
     offset: usize,
 }
 
+impl<'s> From<StackAllocated<'s>> for Local<'s> {
+    fn from(l: StackAllocated<'s>) -> Self {
+        Local::Stacked(l)
+    }
+}
+
+impl<'s> From<Rc<RefCell<FunctionDeclaration<'s>>>> for Local<'s> {
+    fn from(l: Rc<RefCell<FunctionDeclaration<'s>>>) -> Self {
+        Local::FnReference(l)
+    }
+}
+
 pub struct Scope<'s> {
     locals: Vec<Local<'s>>,
-    functions: Vec<FunctionDeclaration<'s>>,
     head: usize,
 }
 
 /// Lexical scope of current block.
-/// Because it contains uncompiled function declarations, it must be used.
 #[must_use]
 impl<'s> Scope<'s> {
     pub fn new(head: usize) -> Scope<'s> {
         Scope {
             locals: Vec::new(),
-            functions: Vec::new(),
             head,
+        }
+    }
+
+    /// Checks that we have space to allocate more locals
+    fn assert_can_allocate(&self) -> Result<(), CompilerError> {
+        if self.locals.len() >= 256 {
+            Err(CompilerError::TooManyLocals)
+        } else {
+            Ok(())
         }
     }
 
@@ -62,34 +125,45 @@ impl<'s> Scope<'s> {
         self.head
     }
 
+    /// Adds a stack-allocated local binding.
     fn add_local(&mut self, identifier: &Token<'s>, kind: Type) -> Result<(), CompilerError> {
         let size = kind
             .compile_time_size()
             .ok_or_else(|| CompilerError::UnknownSize(kind.clone()))?;
 
-        if self.locals.len() >= 256 {
-            return Err(CompilerError::TooManyLocals);
-        }
+        self.assert_can_allocate()?;
 
-        self.locals.push(Local {
-            name: identifier.clone(),
-            kind,
-            offset: self.head,
-        });
+        self.locals.push(
+            StackAllocated {
+                name: identifier.clone(),
+                kind,
+                offset: self.head,
+            }
+            .into(),
+        );
 
         self.head += size;
 
         Ok(())
     }
 
-    /// Adds function declaration to current scope.
-    fn add_function(&mut self, function: FunctionDeclaration<'s>) {
-        self.functions.push(function)
+    fn add_function_ref(
+        &mut self,
+        identifier: &Token<'s>,
+        function: Rc<RefCell<FunctionDeclaration<'s>>>,
+    ) -> Result<(), CompilerError> {
+        self.assert_can_allocate()?;
+        let fn_local: Local = function.into();
+
+        self.head += fn_local.compile_time_size();
+        self.locals.push(fn_local);
+
+        Ok(())
     }
 
     /// Consumes this scope, returning list of function declarations that need to be compiled.
-    fn finish(self) -> (Vec<Local<'s>>, Vec<FunctionDeclaration<'s>>) {
-        (self.locals, self.functions)
+    fn finish(self) -> Vec<Local<'s>> {
+        self.locals
     }
 }
 
@@ -97,7 +171,7 @@ pub struct Compiler<'s> {
     scopes: Vec<Scope<'s>>,
     chunk: Chunk,
     /// Collection of function declarations
-    functions: Vec<FunctionDeclaration<'s>>,
+    functions: Vec<Rc<RefCell<FunctionDeclaration<'s>>>>,
     /// Mapping of type names to types
     types: HashMap<String, Type>,
 }
@@ -120,24 +194,19 @@ impl<'s> Compiler<'s> {
     }
 
     fn pop_scope(&mut self, mut chunk: Chunk) -> Result<Chunk, CompilerError> {
-        let (locals, functions) = self.scopes.pop().unwrap().finish();
+        let locals = self.scopes.pop().unwrap().finish();
 
         for local in locals {
-            self.chunk.push_op(OpCode::PopN);
-            let size = local
-                .kind
-                .compile_time_size()
-                .expect("stack values should have known size!");
+            let size = local.compile_time_size();
 
             if size > 0xFF_FF {
                 unimplemented!();
             }
 
             // TODO: this can be optimized by merging POPN's
+            chunk.push_op(OpCode::PopN);
             chunk.push_value((size as u16).to_le_bytes());
         }
-
-        self.functions.extend(functions);
 
         Ok(chunk)
     }
@@ -156,12 +225,22 @@ impl<'s> Compiler<'s> {
         self.scopes.last_mut().unwrap()
     }
 
-    fn resolve_local(&self, identifier: Token<'s>) -> Result<(&Type, usize), CompilerError> {
+    fn add_function(
+        &mut self,
+        function: FunctionDeclaration<'s>,
+    ) -> Rc<RefCell<FunctionDeclaration<'s>>> {
+        let decl = Rc::new(RefCell::new(function));
+        self.functions.push(Rc::clone(&decl));
+
+        decl
+    }
+
+    fn resolve_local(&self, identifier: Token<'s>) -> Result<&Local<'s>, CompilerError> {
         for scope in self.scopes.iter().rev() {
             // use reversed iterator of locals because we allow in-scope shadowing
             for local in scope.locals.iter().rev() {
-                if local.name.text == identifier.text {
-                    return Ok((&local.kind, local.offset));
+                if local.name() == identifier.text {
+                    return Ok(local);
                 }
             }
         }
@@ -224,12 +303,15 @@ impl<'s> Compiler<'s> {
                 let param_types = param_types.into_iter().map(Result::unwrap).collect();
                 let ret_type = self.resolve_type(&ret_type)?;
 
-                self.scope_mut().add_function(FunctionDeclaration {
-                    name,
+                let fn_ref = self.add_function(FunctionDeclaration {
+                    name: name.clone(),
                     signature: (param_types, ret_type),
                     body,
                     references: vec![],
                 });
+
+                // we need to also create local binding with the function name
+                self.scope_mut().add_function_ref(&name, fn_ref);
 
                 Ok(chunk)
             }
@@ -308,7 +390,7 @@ impl<'s> Compiler<'s> {
                 let mut stack_size = 0;
                 for local in scope.locals {
                     // stack locals always have known size
-                    stack_size += local.kind.compile_time_size().unwrap();
+                    stack_size += local.compile_time_size();
                 }
 
                 if stack_size > 0xFF_FF {
@@ -404,16 +486,31 @@ impl<'s> Compiler<'s> {
             Expression::Variable(bind) => {
                 let identifier = bind.0;
 
-                let (kind, offset) = self.resolve_local(identifier)?;
-                let size = kind.compile_time_size().unwrap();
+                let local = self.resolve_local(identifier)?;
+                let size = local.compile_time_size();
 
-                if size > 0xFF_FF || offset > 0xFF_FF {
-                    unimplemented!("long get local")
+                match local {
+                    Local::Stacked(StackAllocated { name, kind, offset }) => {
+                        if size > 0xFF_FF || *offset > 0xFF_FF {
+                            unimplemented!("long get local")
+                        }
+
+                        chunk.push_op(OpCode::GetLocal);
+                        chunk.push_value((size as u16).to_le_bytes());
+                        chunk.push_value((*offset as u16).to_le_bytes());
+                    }
+                    Local::FnReference(fn_ref) => {
+                        // we could have a separate LoadFunction opcode, but it is just
+                        // ConstantU16, so why bother (im lazy ok)
+                        chunk.push_op(OpCode::LoadFunction);
+                        let backpatch_index = chunk.head();
+                        chunk.push_value(0xAB_BAu16.to_le_bytes());
+
+                        // save the position of the address so we can backpatch it once the function
+                        // is actually compiled
+                        fn_ref.borrow_mut().references.push(backpatch_index);
+                    }
                 }
-
-                chunk.push_op(OpCode::GetLocal);
-                chunk.push_value((size as u16).to_le_bytes());
-                chunk.push_value((offset as u16).to_le_bytes());
 
                 Ok(chunk)
             }
@@ -441,7 +538,7 @@ impl<'s> Compiler<'s> {
                 // This might be confusing behaviour, but I'm not sure whats the best way to fix
                 // this.
 
-                let (arg_types) = match self.infer_type(callee.as_ref()) {
+                let arg_types = match self.infer_type(callee.as_ref()) {
                     Ok(Type::Function(arg_types, ..)) => Ok(arg_types),
                     Ok(other) => Err(TypeError {
                         err: other,
@@ -453,12 +550,38 @@ impl<'s> Compiler<'s> {
                     Err(err) => Err(err),
                 }?;
 
-                for arg in arguments {
+                if arg_types.len() != arguments.len() {
+                    // TODO: actually figure the name of the function. This could get rather complex
+                    return Err(CompilerError::MismatchedArity(
+                        "?".to_owned(),
+                        arg_types.len(),
+                        arguments.len(),
+                    ));
+                }
+
+                let mut args_size = 0;
+                for (arg, kind) in arguments.into_iter().zip(arg_types.into_iter()) {
+                    let actual_type = self.infer_type(&arg)?;
+
+                    if actual_type != kind {
+                        return Err(TypeError {
+                            err: actual_type,
+                            expected: kind,
+                        }
+                        .into());
+                    }
+
                     chunk = self.compile_expr(arg, chunk)?;
+                    args_size += kind.compile_time_size().unwrap();
+                }
+
+                if args_size > 0xFF_FF {
+                    unimplemented!("long call stack");
                 }
 
                 chunk = self.compile_expr(*callee, chunk)?;
                 chunk.push_op(OpCode::Call);
+                chunk.push_value((args_size as u16).to_le_bytes());
 
                 Ok(chunk)
             }
@@ -474,7 +597,7 @@ impl<'s> Compiler<'s> {
             Expression::Literal(..) => Ok(Type::I32),
             Expression::Addition(..) | Expression::Multiplication(..) => Ok(Type::I32),
             Expression::Group(inner) => self.infer_type(inner.inner.as_ref()),
-            Expression::Variable(bind) => Ok(self.resolve_local(bind.0)?.0.clone()),
+            Expression::Variable(bind) => Ok(self.resolve_local(bind.0)?.kind().clone()),
             Expression::If(expr) => self.infer_type(expr.body.as_ref()),
             Expression::Block(block) => self.infer_type(block.ret.as_ref()),
             e @ _ => unimplemented!("inference for {:?}", e),
