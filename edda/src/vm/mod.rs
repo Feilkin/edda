@@ -27,6 +27,12 @@ pub struct Vm {
     ip: usize,
 }
 
+pub struct CallFrame {
+    return_address: usize,
+    stack_size: usize,
+    return_size: usize,
+}
+
 // public methods
 impl Vm {
     pub fn new(chunk: Chunk) -> Vm {

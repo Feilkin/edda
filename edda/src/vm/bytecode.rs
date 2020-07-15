@@ -14,6 +14,8 @@ pub enum OpCode {
     /// and after that, pops (discards) A + B (u16) bytes from the stack,
     /// and lastly, pushes return value back to stack.
     BlockReturn = 0x01,
+    /// Return from function, all required info is located within call stack.
+    FnReturn = 0x02,
     /// Push constant i32 to stack
     ConstantI32 = 0x10,
     /// Sum two i32s
@@ -45,7 +47,7 @@ pub enum OpCode {
     /// Sets A (u16) bytes at stack offset B (u16) to value at top of stack
     SetLocal = 0x63,
     // reserved: long set
-    /// Call function :)
+    /// Call function :) args stack_size u16 ret_size u16
     Call = 0x70,
     /// Load function offset to stack. This is just u16 constant, but we have separate opcode for it
     /// for future debugging needs.
@@ -70,18 +72,6 @@ impl Debug for Chunk {
             write!(f, "{:<20}", format!("{:?}", op))?;
 
             match op {
-                OpCode::JumpIfFalse
-                | OpCode::Jump
-                | OpCode::Jumb
-                | OpCode::PopN
-                | OpCode::Call
-                | OpCode::LoadFunction => {
-                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
-                    ptr += 2;
-
-                    writeln!(f, " ]")?;
-                    write!(f, "[      : {:>20}", arg)?;
-                }
                 OpCode::Return
                 | OpCode::AddI32
                 | OpCode::SubI32
@@ -89,15 +79,20 @@ impl Debug for Chunk {
                 | OpCode::DivI32
                 | OpCode::LessEqualI32
                 | OpCode::LessI32
-                | OpCode::EqualI32 => (),
-                OpCode::ConstantI32 => {
-                    let arg = i32::from_le_bytes(self.code[ptr..ptr + 4].try_into().unwrap());
-                    ptr += 4;
+                | OpCode::EqualI32
+                | OpCode::FnReturn => (),
+                OpCode::JumpIfFalse
+                | OpCode::Jump
+                | OpCode::Jumb
+                | OpCode::PopN
+                | OpCode::LoadFunction => {
+                    let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
+                    ptr += 2;
 
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
                 }
-                OpCode::GetLocal | OpCode::SetLocal | OpCode::BlockReturn => {
+                OpCode::GetLocal | OpCode::SetLocal | OpCode::BlockReturn | OpCode::Call => {
                     let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
                     ptr += 2;
 
@@ -105,6 +100,13 @@ impl Debug for Chunk {
                     write!(f, "[      : {:>20}", arg)?;
                     let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
                     ptr += 2;
+
+                    writeln!(f, " ]")?;
+                    write!(f, "[      : {:>20}", arg)?;
+                }
+                OpCode::ConstantI32 => {
+                    let arg = i32::from_le_bytes(self.code[ptr..ptr + 4].try_into().unwrap());
+                    ptr += 4;
 
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;

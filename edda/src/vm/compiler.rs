@@ -11,7 +11,7 @@ use crate::vm::compiler::Local::FnReference;
 use crate::vm::function::FunctionDeclaration;
 use crate::Error;
 use std::borrow::Borrow;
-use std::cell::{Ref, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -70,7 +70,7 @@ impl<'s> Local<'s> {
                 let fn_ref = fn_ref.borrow();
 
                 Type::Function(
-                    fn_ref.signature.0.clone(),
+                    fn_ref.signature.0.iter().map(|(_, k)| k.clone()).collect(),
                     Box::from(fn_ref.signature.1.clone()),
                 )
             }
@@ -193,6 +193,10 @@ impl<'s> Compiler<'s> {
         self.scopes.push(Scope::new(self.scope().head()));
     }
 
+    fn push_scope_with_offset(&mut self, offset: usize) {
+        self.scopes.push(Scope::new(offset));
+    }
+
     fn pop_scope(&mut self, mut chunk: Chunk) -> Result<Chunk, CompilerError> {
         let locals = self.scopes.pop().unwrap().finish();
 
@@ -257,7 +261,71 @@ impl<'s> Compiler<'s> {
         }
 
         // compile functions
-        for func in self.functions {}
+        while self.functions.len() > 0 {
+            let func = self.functions.remove(0);
+            let offset = chunk.head();
+            let func_borrow: &RefCell<FunctionDeclaration> = func.borrow();
+            chunk = self.compile_function(&func_borrow, offset, chunk)?;
+
+            for i in &func_borrow.borrow().references {
+                if offset > 0xFF_FF {
+                    unimplemented!("long func call");
+                }
+
+                chunk.code[*i..*i + 2].copy_from_slice(&(offset as u16).to_le_bytes());
+            }
+        }
+
+        Ok(chunk)
+    }
+
+    fn compile_function(
+        &mut self,
+        function: &RefCell<FunctionDeclaration<'s>>,
+        offset: usize,
+        mut chunk: Chunk,
+    ) -> Result<Chunk, CompilerError> {
+        // When the function has been called, stack will contain it's parameter in the order
+        // they were declared. We want to push a new scope, that overlaps with the last one.
+        // This is fine, since the scope will get discarded, and no POPs will be generated,
+        // as the RETURN opcode will take care of cleaning the stack.
+        let body = {
+            let mut func_mut = function.borrow_mut();
+            func_mut.offset = Some(offset);
+            func_mut.body.take().unwrap()
+        };
+
+        {
+            let func_borrow = function.borrow();
+            let mut stack_size = func_borrow
+                .signature
+                .0
+                .iter()
+                .map(|(_, k)| k.compile_time_size().unwrap())
+                .sum();
+
+            self.push_scope_with_offset(stack_size);
+
+            for param in &func_borrow.signature.0 {
+                self.scope_mut().add_local(&param.0, param.1.clone())?;
+            }
+
+            let actual_ret_type = self.infer_type(&body)?;
+
+            if actual_ret_type != func_borrow.signature.1 {
+                return Err(TypeError {
+                    err: actual_ret_type,
+                    expected: func_borrow.signature.1.clone(),
+                }
+                .into());
+            }
+        }
+
+        chunk = self.compile_expr(*body, chunk)?;
+
+        let locals = self.discard_scope()?.finish();
+
+        chunk.push_op(OpCode::FnReturn);
 
         Ok(chunk)
     }
@@ -292,7 +360,7 @@ impl<'s> Compiler<'s> {
             }) => {
                 let (param_types, errs): (Vec<_>, Vec<_>) = params
                     .iter()
-                    .map(|(_, k)| self.resolve_type(k))
+                    .map(|(id, k)| self.resolve_type(k).and_then(|k| Ok((id.clone(), k))))
                     .partition(Result::is_ok);
 
                 if !errs.is_empty() {
@@ -306,12 +374,13 @@ impl<'s> Compiler<'s> {
                 let fn_ref = self.add_function(FunctionDeclaration {
                     name: name.clone(),
                     signature: (param_types, ret_type),
-                    body,
+                    body: Some(body),
                     references: vec![],
+                    offset: None,
                 });
 
                 // we need to also create local binding with the function name
-                self.scope_mut().add_function_ref(&name, fn_ref);
+                self.scope_mut().add_function_ref(&name, fn_ref)?;
 
                 Ok(chunk)
             }
@@ -503,12 +572,23 @@ impl<'s> Compiler<'s> {
                         // we could have a separate LoadFunction opcode, but it is just
                         // ConstantU16, so why bother (im lazy ok)
                         chunk.push_op(OpCode::LoadFunction);
-                        let backpatch_index = chunk.head();
-                        chunk.push_value(0xAB_BAu16.to_le_bytes());
 
-                        // save the position of the address so we can backpatch it once the function
-                        // is actually compiled
-                        fn_ref.borrow_mut().references.push(backpatch_index);
+                        let offset = { RefCell::borrow(fn_ref).offset.clone() };
+
+                        if let Some(offset) = offset {
+                            if offset > 0xFF_FF {
+                                unimplemented!("long call");
+                            }
+
+                            chunk.push_value((offset as u16).to_le_bytes());
+                        } else {
+                            let backpatch_index = chunk.head();
+                            chunk.push_value(0xAB_BAu16.to_le_bytes());
+
+                            // save the position of the address so we can backpatch it once the function
+                            // is actually compiled
+                            fn_ref.borrow_mut().references.push(backpatch_index);
+                        }
                     }
                 }
 
@@ -538,8 +618,8 @@ impl<'s> Compiler<'s> {
                 // This might be confusing behaviour, but I'm not sure whats the best way to fix
                 // this.
 
-                let arg_types = match self.infer_type(callee.as_ref()) {
-                    Ok(Type::Function(arg_types, ..)) => Ok(arg_types),
+                let (arg_types, ret_type) = match self.infer_type(callee.as_ref()) {
+                    Ok(Type::Function(arg_types, ret_type)) => Ok((arg_types, ret_type)),
                     Ok(other) => Err(TypeError {
                         err: other,
                         // TODO: the actual expected type could be inferred from context, but
@@ -579,9 +659,18 @@ impl<'s> Compiler<'s> {
                     unimplemented!("long call stack");
                 }
 
+                let ret_size = ret_type
+                    .compile_time_size()
+                    .ok_or_else(|| CompilerError::UnknownSize(*ret_type))?;
+
+                if ret_size > 0xFF_FF {
+                    unimplemented!("long call stack");
+                }
+
                 chunk = self.compile_expr(*callee, chunk)?;
                 chunk.push_op(OpCode::Call);
                 chunk.push_value((args_size as u16).to_le_bytes());
+                chunk.push_value((ret_size as u16).to_le_bytes());
 
                 Ok(chunk)
             }
@@ -600,6 +689,23 @@ impl<'s> Compiler<'s> {
             Expression::Variable(bind) => Ok(self.resolve_local(bind.0)?.kind().clone()),
             Expression::If(expr) => self.infer_type(expr.body.as_ref()),
             Expression::Block(block) => self.infer_type(block.ret.as_ref()),
+            Expression::Call(CallExpr { callee, arguments }) => {
+                let callee_kind = self.infer_type(callee)?;
+                match callee_kind {
+                    Type::Function(_, ret_type) => Ok(*ret_type.clone()),
+                    other @ _ => Err(TypeError {
+                        err: other,
+                        expected: Type::Function(
+                            arguments
+                                .iter()
+                                .map(|a| self.infer_type(a))
+                                .collect::<Result<Vec<_>, CompilerError>>()?,
+                            Box::from(Type::Any),
+                        ),
+                    }
+                    .into()),
+                }
+            }
             e @ _ => unimplemented!("inference for {:?}", e),
         }
     }

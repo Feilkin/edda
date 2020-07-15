@@ -9,7 +9,10 @@ use crate::{Chunk, Expression};
 /// actual address to the function.
 pub struct FunctionDeclaration<'s> {
     pub name: Token<'s>,
-    pub signature: (Vec<Type>, Type),
-    pub body: Box<Expression<'s>>,
+    pub signature: (Vec<(Token<'s>, Type)>, Type),
+    // here, these 2 options are creating 4 possible states, when we only want 2 states (foward
+    // declaration or offset)
+    pub body: Option<Box<Expression<'s>>>,
+    pub offset: Option<usize>,
     pub references: Vec<usize>,
 }
