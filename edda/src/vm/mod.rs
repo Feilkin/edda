@@ -13,6 +13,29 @@ mod function;
 
 const SCRIPT_MEMORY: usize = 1024;
 
+type OpFn = fn(&mut Vm) -> Option<i32>;
+
+fn undefined_op(_: &mut Vm) -> Option<i32> {
+    panic!("undefined opcode");
+}
+
+lazy_static! {
+    static ref OP_FN_LOOKUP: [fn(&mut Vm) -> Option<i32>; 256] = {
+        let mut lookup_table = [undefined_op as OpFn; 256];
+        let lookup_values: Vec<OpFn> = (0..=255)
+            .map(|b| {
+                OpCode::try_from(b)
+                    .and_then(|op| Some(Vm::op_fn(op)))
+                    .unwrap_or(undefined_op)
+            })
+            .collect();
+
+        lookup_table.copy_from_slice(&lookup_values[..]);
+
+        lookup_table
+    };
+}
+
 // quick hack lol
 pub enum VmState {
     Running(Vm),
@@ -47,115 +70,138 @@ impl Vm {
         }
     }
 
-    pub fn run(mut self) -> VmState {
-        let op = self.next_op();
+    pub fn run(mut self) -> i32 {
+        loop {
+            let op = self.next_op();
+            if let Some(ret) = OP_FN_LOOKUP[op as u8 as usize](&mut self) {
+                return ret;
+            }
+        }
+    }
 
+    fn op_fn(op: OpCode) -> fn(&mut Vm) -> Option<i32> {
         match op {
-            OpCode::Return => {
-                let ret = i32::from_le_bytes(self.pop_bytes(4).unwrap().try_into().unwrap());
-                return VmState::Finished(ret);
-            }
-            OpCode::ConstantI32 => {
-                self.load_bytes(4).unwrap();
-            }
-            OpCode::AddI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+            OpCode::Return => |vm| {
+                let ret = i32::from_le_bytes(vm.pop_bytes(4).unwrap().try_into().unwrap());
+                Some(ret)
+            },
+            OpCode::ConstantI32 => |vm| {
+                vm.load_bytes(4).unwrap();
+                None
+            },
+            OpCode::AddI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs + rhs;
-                self.push_bytes(&val.to_le_bytes()).unwrap();
-            }
-            OpCode::SubI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                vm.push_bytes(&val.to_le_bytes()).unwrap();
+                None
+            },
+            OpCode::SubI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs - rhs;
-                self.push_bytes(&val.to_le_bytes()).unwrap();
-            }
-            OpCode::MulI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                vm.push_bytes(&val.to_le_bytes()).unwrap();
+                None
+            },
+            OpCode::MulI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs * rhs;
-                self.push_bytes(&val.to_le_bytes()).unwrap();
-            }
-            OpCode::DivI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                vm.push_bytes(&val.to_le_bytes()).unwrap();
+                None
+            },
+            OpCode::DivI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs / rhs;
-                self.push_bytes(&val.to_le_bytes()).unwrap();
-            }
-            OpCode::Jump => {
-                let offset = self.chunk_short();
-                self.ip += offset as usize - 2;
-            }
-            OpCode::Jumb => {
-                let offset = self.chunk_short();
-                self.ip -= offset as usize + 2;
-            }
-            OpCode::JumpIfFalse => {
-                let offset = self.chunk_short();
-                let cond = self.pop_bytes(1).unwrap();
+                vm.push_bytes(&val.to_le_bytes()).unwrap();
+                None
+            },
+            OpCode::Jump => |vm| {
+                let offset = vm.chunk_short();
+                vm.ip += offset as usize - 2;
+                None
+            },
+            OpCode::Jumb => |vm| {
+                let offset = vm.chunk_short();
+                vm.ip -= offset as usize + 2;
+                None
+            },
+            OpCode::JumpIfFalse => |vm| {
+                let offset = vm.chunk_short();
+                let cond = vm.pop_bytes(1).unwrap();
 
                 if cond[0] == 0 {
-                    self.ip += offset as usize - 2;
+                    vm.ip += offset as usize - 2;
                 }
-            }
-            OpCode::LessI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                None
+            },
+            OpCode::LessI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs < rhs;
-                self.push_bytes(&[val as u8]).unwrap();
-            }
-            OpCode::LessEqualI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                vm.push_bytes(&[val as u8]).unwrap();
+                None
+            },
+            OpCode::LessEqualI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs <= rhs;
-                self.push_bytes(&[val as u8]).unwrap();
-            }
-            OpCode::EqualI32 => {
-                let (rhs, lhs) = self.pop_i32_2().unwrap();
+                vm.push_bytes(&[val as u8]).unwrap();
+                None
+            },
+            OpCode::EqualI32 => |vm| {
+                let (rhs, lhs) = vm.pop_i32_2().unwrap();
                 let val = lhs == rhs;
-                self.push_bytes(&[val as u8]).unwrap();
-            }
-            OpCode::PopN => {
-                let size = self.chunk_short() as usize;
-                self.pop_bytes(size).unwrap();
-            }
-            OpCode::GetLocal => {
-                let size = self.chunk_short() as usize;
-                let offset = self.chunk_short() as usize;
+                vm.push_bytes(&[val as u8]).unwrap();
+                None
+            },
+            OpCode::PopN => |vm| {
+                let size = vm.chunk_short() as usize;
+                vm.pop_bytes(size).unwrap();
+                None
+            },
+            OpCode::GetLocal => |vm| {
+                let size = vm.chunk_short() as usize;
+                let offset = vm.chunk_short() as usize;
 
-                let top = self
+                let top = vm
                     .call_stack
                     .last()
                     .map(|f| f.stack_start)
                     .unwrap_or(SCRIPT_MEMORY);
 
-                self.push_slice_from_mem(top - offset - size..top - offset)
+                vm.push_slice_from_mem(top - offset - size..top - offset)
                     .unwrap();
-            }
-            OpCode::LoadFunction => {
-                self.load_bytes(2).unwrap();
-            }
-            OpCode::BlockReturn => {
-                let ret_size = self.chunk_short() as usize;
-                let scope_size = self.chunk_short() as usize;
+                None
+            },
+            OpCode::LoadFunction => |vm| {
+                vm.load_bytes(2).unwrap();
+                None
+            },
+            OpCode::BlockReturn => |vm| {
+                let ret_size = vm.chunk_short() as usize;
+                let scope_size = vm.chunk_short() as usize;
 
                 // Instead of allocating temp buffer for the return value, we can just use a slice
-                // on self.mem, as this memory will not get mutated.
-                let ret_range = self.sp + 1..self.sp + ret_size + 1;
-                self.pop_bytes(scope_size + ret_size).unwrap();
-                self.push_slice_from_mem(ret_range).unwrap();
-            }
-            OpCode::Call => {
-                let stack_size = self.chunk_short() as usize;
-                let return_size = self.chunk_short() as usize;
-                let return_address = self.ip;
-                let fn_address = u16::from_le_bytes(self.pop_bytes(2).unwrap().try_into().unwrap());
+                // on vm.mem, as this memory will not get mutated.
+                let ret_range = vm.sp + 1..vm.sp + ret_size + 1;
+                vm.pop_bytes(scope_size + ret_size).unwrap();
+                vm.push_slice_from_mem(ret_range).unwrap();
+                None
+            },
+            OpCode::Call => |vm| {
+                let stack_size = vm.chunk_short() as usize;
+                let return_size = vm.chunk_short() as usize;
+                let return_address = vm.ip;
+                let fn_address = u16::from_le_bytes(vm.pop_bytes(2).unwrap().try_into().unwrap());
 
-                self.call_stack.push(CallFrame {
-                    stack_start: self.sp + 1 + stack_size,
+                vm.call_stack.push(CallFrame {
+                    stack_start: vm.sp + 1 + stack_size,
                     return_address,
                     stack_size,
                     return_size,
                 });
 
-                self.ip = fn_address as usize;
-            }
-            OpCode::FnReturn => {
-                if self.call_stack.is_empty() {
+                vm.ip = fn_address as usize;
+                None
+            },
+            OpCode::FnReturn => |vm| {
+                if vm.call_stack.is_empty() {
                     panic!("tried to pop call frame from empty call stack");
                 }
 
@@ -164,19 +210,18 @@ impl Vm {
                     stack_size,
                     return_size,
                     ..
-                } = self.call_stack.pop().unwrap();
+                } = vm.call_stack.pop().unwrap();
 
                 // Instead of allocating temp buffer for the return value, we can just use a slice
-                // on self.mem, as this memory will not get mutated.
-                let ret_range = self.sp + 1..self.sp + return_size + 1;
-                self.pop_bytes(stack_size + return_size).unwrap();
-                self.push_slice_from_mem(ret_range).unwrap();
-                self.ip = return_address;
-            }
+                // on vm.mem, as this memory will not get mutated.
+                let ret_range = vm.sp + 1..vm.sp + return_size + 1;
+                vm.pop_bytes(stack_size + return_size).unwrap();
+                vm.push_slice_from_mem(ret_range).unwrap();
+                vm.ip = return_address;
+                None
+            },
             u @ _ => unimplemented!("opcode {:?} is not implemented!", u),
         }
-
-        VmState::Running(self)
     }
 }
 
@@ -211,8 +256,8 @@ impl Debug for Vm {
 
 // private methods
 impl Vm {
-    fn next_op(&mut self) -> OpCode {
-        let op = OpCode::try_from(self.chunk.code[self.ip]).unwrap();
+    fn next_op(&mut self) -> u8 {
+        let op = self.chunk.code[self.ip];
         self.ip += 1;
         op
     }

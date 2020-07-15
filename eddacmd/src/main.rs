@@ -43,15 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut vm = Vm::new(chunk);
     println!("{:?}", &vm);
 
-    let ret_val = loop {
-        match vm.run() {
-            VmState::Running(new_vm) => {
-                vm = new_vm;
-                //                println!("{:?}", &vm);
-            }
-            VmState::Finished(val) => break val,
-        }
-    };
+    let ret_val = vm.run();
 
     println!("Return value: {}", ret_val);
 

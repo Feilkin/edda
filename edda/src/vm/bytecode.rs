@@ -4,7 +4,7 @@ use derive_try_from_primitive::TryFromPrimitive;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Error, Formatter};
 
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Clone, Copy)]
 #[repr(u8)]
 pub enum OpCode {
     /// Return from current function
@@ -45,13 +45,30 @@ pub enum OpCode {
     GetLocal = 0x62,
     // reserved: long get
     /// Sets A (u16) bytes at stack offset B (u16) to value at top of stack
-    SetLocal = 0x63,
+    //SetLocal = 0x63,
     // reserved: long set
     /// Call function :) args stack_size u16 ret_size u16
     Call = 0x70,
     /// Load function offset to stack. This is just u16 constant, but we have separate opcode for it
     /// for future debugging needs.
     LoadFunction = 0x12,
+}
+
+lazy_static! {
+    static ref OPCODE_LOOKUP: [Option<OpCode>; 256] = {
+        let mut lookup_table: [Option<OpCode>; 256] = [None; 256];
+        let lookup_values: Vec<Option<OpCode>> = (0..=255).map(|b| OpCode::try_from(b)).collect();
+
+        lookup_table.copy_from_slice(&lookup_values[..]);
+
+        lookup_table
+    };
+}
+
+impl From<u8> for OpCode {
+    fn from(value: u8) -> Self {
+        OPCODE_LOOKUP[value as usize].unwrap()
+    }
 }
 
 pub struct Chunk {
@@ -92,7 +109,7 @@ impl Debug for Chunk {
                     writeln!(f, " ]")?;
                     write!(f, "[      : {:>20}", arg)?;
                 }
-                OpCode::GetLocal | OpCode::SetLocal | OpCode::BlockReturn | OpCode::Call => {
+                OpCode::GetLocal | OpCode::BlockReturn | OpCode::Call => {
                     let arg = u16::from_le_bytes(self.code[ptr..ptr + 2].try_into().unwrap());
                     ptr += 2;
 

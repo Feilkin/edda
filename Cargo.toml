@@ -5,3 +5,6 @@ members = [
 	"eddacmd",
 #	"eddagui",
 ]
+
+[profile.release]
+debug = true
