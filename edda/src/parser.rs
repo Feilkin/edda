@@ -162,7 +162,7 @@ macro_rules! peek_tokens {
 macro_rules! match_and {
     ($token_stream:ident, $($valid:path => $body:expr),+ $(,)?) => {
         match $token_stream.first().unwrap() {
-            $(Token @ Token {
+            $(token @ Token {
                 t_type: $valid,
                 ..
             } => $body,)+

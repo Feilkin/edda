@@ -6,8 +6,4 @@ fn fib(n: i32) -> i32 {
     else { fib(n - 1) + fib(n - 2) }
 }
 
-fn foo() -> i32 {
-    fib(1337)
-}
-
-return fib(100);
+return fib(30);

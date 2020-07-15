@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         match vm.run() {
             VmState::Running(new_vm) => {
                 vm = new_vm;
-                println!("{:?}", &vm);
+                //                println!("{:?}", &vm);
             }
             VmState::Finished(val) => break val,
         }

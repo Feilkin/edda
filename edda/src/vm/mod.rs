@@ -11,7 +11,7 @@ pub mod compiler;
 pub mod errors;
 mod function;
 
-const SCRIPT_MEMORY: usize = 256;
+const SCRIPT_MEMORY: usize = 1024;
 
 // quick hack lol
 pub enum VmState {
@@ -22,6 +22,7 @@ pub enum VmState {
 pub struct Vm {
     chunk: Chunk,
     mem: [u8; SCRIPT_MEMORY],
+    call_stack: Vec<CallFrame>,
     /// Points to next empty memory location in stack
     sp: usize,
     ip: usize,
@@ -29,6 +30,7 @@ pub struct Vm {
 
 pub struct CallFrame {
     return_address: usize,
+    stack_start: usize,
     stack_size: usize,
     return_size: usize,
 }
@@ -39,6 +41,7 @@ impl Vm {
         Vm {
             chunk,
             mem: [0; SCRIPT_MEMORY],
+            call_stack: Vec::new(),
             sp: SCRIPT_MEMORY - 1,
             ip: 0,
         }
@@ -53,7 +56,7 @@ impl Vm {
                 return VmState::Finished(ret);
             }
             OpCode::ConstantI32 => {
-                self.load_bytes(4);
+                self.load_bytes(4).unwrap();
             }
             OpCode::AddI32 => {
                 let (rhs, lhs) = self.pop_i32_2().unwrap();
@@ -108,14 +111,23 @@ impl Vm {
             }
             OpCode::PopN => {
                 let size = self.chunk_short() as usize;
-                self.pop_bytes(size);
+                self.pop_bytes(size).unwrap();
             }
             OpCode::GetLocal => {
                 let size = self.chunk_short() as usize;
                 let offset = self.chunk_short() as usize;
 
-                self.push_slice_from_mem(SCRIPT_MEMORY - offset - size..SCRIPT_MEMORY - offset)
+                let top = self
+                    .call_stack
+                    .last()
+                    .map(|f| f.stack_start)
+                    .unwrap_or(SCRIPT_MEMORY);
+
+                self.push_slice_from_mem(top - offset - size..top - offset)
                     .unwrap();
+            }
+            OpCode::LoadFunction => {
+                self.load_bytes(2).unwrap();
             }
             OpCode::BlockReturn => {
                 let ret_size = self.chunk_short() as usize;
@@ -124,8 +136,42 @@ impl Vm {
                 // Instead of allocating temp buffer for the return value, we can just use a slice
                 // on self.mem, as this memory will not get mutated.
                 let ret_range = self.sp + 1..self.sp + ret_size + 1;
-                self.pop_bytes(scope_size + ret_size);
+                self.pop_bytes(scope_size + ret_size).unwrap();
                 self.push_slice_from_mem(ret_range).unwrap();
+            }
+            OpCode::Call => {
+                let stack_size = self.chunk_short() as usize;
+                let return_size = self.chunk_short() as usize;
+                let return_address = self.ip;
+                let fn_address = u16::from_le_bytes(self.pop_bytes(2).unwrap().try_into().unwrap());
+
+                self.call_stack.push(CallFrame {
+                    stack_start: self.sp + 1 + stack_size,
+                    return_address,
+                    stack_size,
+                    return_size,
+                });
+
+                self.ip = fn_address as usize;
+            }
+            OpCode::FnReturn => {
+                if self.call_stack.is_empty() {
+                    panic!("tried to pop call frame from empty call stack");
+                }
+
+                let CallFrame {
+                    return_address,
+                    stack_size,
+                    return_size,
+                    ..
+                } = self.call_stack.pop().unwrap();
+
+                // Instead of allocating temp buffer for the return value, we can just use a slice
+                // on self.mem, as this memory will not get mutated.
+                let ret_range = self.sp + 1..self.sp + return_size + 1;
+                self.pop_bytes(stack_size + return_size).unwrap();
+                self.push_slice_from_mem(ret_range).unwrap();
+                self.ip = return_address;
             }
             u @ _ => unimplemented!("opcode {:?} is not implemented!", u),
         }
@@ -225,7 +271,7 @@ impl Vm {
         let sp = self.sp;
 
         // TODO: check that we don't run into heap??
-        if sp + 1 < len {
+        if sp < len {
             return Err(OutOfMemory {
                 tried_to_allocate: len,
             });
@@ -259,7 +305,7 @@ impl Vm {
             });
         }
 
-        let (src, dst) = if sp < range.start {
+        let (src, dst) = if sp <= range.start {
             // value is contained within stack (local variable)
             // stack grows from the top down, so dst and src are reversed here
             let (dst, src) = self.mem.split_at_mut(range.start);
