@@ -3,6 +3,7 @@
 members = [
 	"edda",
 	"eddacmd",
+# eddagui is outdated and I'll probably just replace it with printing the AST to console
 #	"eddagui",
 ]
 
